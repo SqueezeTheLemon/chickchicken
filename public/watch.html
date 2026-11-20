@@ -9,94 +9,275 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 </head>
 <body>
-  <header>
-    <a class="logo" href="/">chickchicken</a>
-    <nav class="row">
-      <a class="btn ghost" href="/live">📱 라이브 시작</a>
-      <a class="btn" href="/upload">+ 영상 등록</a>
-    </nav>
-  </header>
-  <main id="main">
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
+  <main id="main" class="watch">
     <p id="status" class="empty">불러오는 중…</p>
   </main>
 
   <script type="module">
-    import { api, el, formatDate, formatSize, statusBadge } from '/app.js';
+    import { api, el, formatDate, formatSize, loginUrl, mountHeader, send, statusBadge } from '/app.js';
 
     const status = document.getElementById('status');
     const id = new URLSearchParams(location.search).get('id');
     const POLL_MS = 3000;
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+    const me = await mountHeader();
+    let b;
+
     try {
       if (!id) throw new Error('잘못된 주소예요.');
-      let b = await api(`/broadcasts/${encodeURIComponent(id)}`);
-      document.title = `${b.title} · chickchicken`;
-
-      const video = el('video', { className: 'player', controls: true, autoplay: true, playsInline: true });
-      const overlay = el('div', { className: 'player-overlay', hidden: true });
-      const badge = el('span');
-      const notice = el('p', { className: 'notice' });
-      const renderBadge = () => badge.replaceChildren(statusBadge(b));
-      renderBadge();
-
-      status.replaceWith(
-        el('div', { className: 'player-wrap' }, video, overlay),
-        el('h1', { style: 'margin-top:16px' }, badge, ' ', b.title),
-        el('p', { className: 'meta', textContent: meta(b) }),
-        notice,
-        el('p', { className: 'desc', textContent: b.description || '설명이 없어요.' }),
-      );
-
-      if (b.kind === 'vod') {
-        video.append(el('source', { src: b.videoUrl, type: b.mimeType }));
-      } else {
-        await playLive();
-      }
-
-      async function playLive() {
-        // 1) 방송 직후엔 첫 조각이 만들어질 때까지 재생목록이 없어요 → 생길 때까지 기다리기
-        while (!(await exists(b.videoUrl))) {
-          if (b.status === 'ended') return showOverlay('송출된 영상이 없는 방송이에요.');
-          showOverlay('방송 준비 중이에요…');
-          await sleep(POLL_MS);
-          b = await api(`/broadcasts/${b.id}`);
-        }
-        overlay.hidden = true;
-
-        // 2) 재생 (방송 중이면 최신 지점부터, 종료된 방송이면 처음부터 = 다시보기)
-        if (window.Hls?.isSupported()) {
-          const hls = new Hls({ manifestLoadingMaxRetry: 6, levelLoadingMaxRetry: 6 });
-          hls.loadSource(b.videoUrl);
-          hls.attachMedia(video);
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          video.src = b.videoUrl;
-        } else {
-          return showOverlay('이 브라우저는 HLS 재생을 지원하지 않아요.');
-        }
-        video.play().catch(() => {}); // 자동재생이 막히면 사용자가 ▶ 를 누르면 돼요
-
-        // 3) 방송 중이면 상태를 주기적으로 확인해서 종료를 표시
-        if (b.status === 'ended') {
-          notice.textContent = '종료된 라이브예요. 다시보기로 재생하고 있어요.';
-          return;
-        }
-        notice.textContent = '실시간 방송 중이에요. (HLS 특성상 5~10초 지연될 수 있어요)';
-        while (b.status === 'live') {
-          await sleep(POLL_MS);
-          b = await api(`/broadcasts/${b.id}`).catch(() => b);
-        }
-        renderBadge();
-        notice.textContent = '방송이 종료됐어요. 마지막 장면까지 재생된 뒤 멈춰요. 새로고침하면 다시보기로 볼 수 있어요.';
-      }
-
-      function showOverlay(text) {
-        overlay.hidden = false;
-        overlay.textContent = text;
-      }
+      b = await api(`/broadcasts/${encodeURIComponent(id)}`);
     } catch (e) {
       status.className = 'error';
       status.textContent = e.message;
+      throw e;
+    }
+
+    // ---------------- 영상 + 방송 정보 ----------------
+    const video = el('video', { className: 'player', controls: true, autoplay: true, playsInline: true });
+    const overlay = el('div', { className: 'player-overlay', hidden: true });
+    const badge = el('span');
+    const titleText = el('span');
+    const metaLine = el('p', { className: 'meta' });
+    const notice = el('p', { className: 'notice' });
+    const desc = el('p', { className: 'desc' });
+    const ownerBar = el('div', { className: 'row owner-bar' });
+    const editForm = buildEditForm();
+    const isOwner = () => Boolean(me && b.owner?.id === me.id);
+
+    function renderInfo() {
+      document.title = `${b.title} · chickchicken`;
+      badge.replaceChildren(statusBadge(b));
+      titleText.textContent = b.title;
+      metaLine.textContent = `${b.owner?.nickname ?? '알 수 없음'} · ${meta(b)}`;
+      desc.textContent = b.description || '설명이 없어요.';
+      renderOwnerBar();
+    }
+
+    // 💡 소유자에게만 버튼을 보여주지만, 이건 화면 편의일 뿐 — 서버가 403 으로 한 번 더 막아요
+    function renderOwnerBar() {
+      ownerBar.replaceChildren();
+      if (!isOwner()) return;
+      const editBtn = el('button', { className: 'btn ghost', type: 'button', textContent: '✏️ 수정' });
+      editBtn.onclick = () => {
+        editForm.title.value = b.title;
+        editForm.description.value = b.description;
+        editForm.hidden = !editForm.hidden;
+      };
+      const deleteBtn = el('button', { className: 'btn danger', type: 'button', textContent: '🗑 삭제' });
+      deleteBtn.onclick = async () => {
+        if (!confirm('이 방송을 삭제할까요? 영상과 댓글이 모두 지워지고 되돌릴 수 없어요.')) return;
+        try {
+          await send('DELETE', `/broadcasts/${b.id}`);
+          location.href = '/';
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+      ownerBar.append(editBtn);
+      if (b.kind === 'live' && b.status === 'live') {
+        const endBtn = el('button', { className: 'btn ghost', type: 'button', textContent: '■ 방송 종료' });
+        endBtn.onclick = async () => {
+          if (!confirm('방송을 종료할까요?')) return;
+          endBtn.disabled = true;
+          await send('POST', `/lives/${b.id}/end`).catch((err) => alert(err.message));
+        };
+        ownerBar.append(endBtn);
+      }
+      ownerBar.append(deleteBtn);
+    }
+
+    function buildEditForm() {
+      const form = el('form', { className: 'edit-form', hidden: true },
+        el('label', {}, '제목', el('input', { name: 'title', required: true, maxLength: 100 })),
+        el('label', {}, '설명', el('textarea', { name: 'description', maxLength: 2000 })),
+        el('div', { className: 'row' },
+          el('button', { className: 'btn', type: 'submit', textContent: '저장' }),
+          el('button', { className: 'btn ghost', type: 'button', textContent: '취소', onclick: () => (form.hidden = true) }),
+        ),
+      );
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          b = await send('PATCH', `/broadcasts/${b.id}`, Object.fromEntries(new FormData(form)));
+          form.hidden = true;
+          renderInfo();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+      return form;
+    }
+
+    // ---------------- 댓글 ----------------
+    const comments = buildComments();
+
+    status.replaceWith(
+      el('div', { className: 'watch-layout' },
+        el('section', {},
+          el('div', { className: 'player-wrap' }, video, overlay),
+          el('h1', { style: 'margin-top:16px' }, badge, ' ', titleText),
+          metaLine,
+          ownerBar,
+          editForm,
+          notice,
+          desc,
+        ),
+        comments.root,
+      ),
+    );
+    renderInfo();
+    comments.start();
+
+    if (b.kind === 'vod') {
+      video.append(el('source', { src: b.videoUrl, type: b.mimeType }));
+    } else {
+      playLive();
+    }
+
+    async function playLive() {
+      // 1) 방송 직후엔 첫 조각이 만들어질 때까지 재생목록이 없어요 → 생길 때까지 기다리기
+      while (!(await exists(b.videoUrl))) {
+        if (b.status === 'ended') return showOverlay('송출된 영상이 없는 방송이에요.');
+        showOverlay('방송 준비 중이에요…');
+        await sleep(POLL_MS);
+        b = await api(`/broadcasts/${b.id}`);
+      }
+      overlay.hidden = true;
+
+      // 2) 재생 (방송 중이면 최신 지점부터, 종료된 방송이면 처음부터 = 다시보기)
+      if (window.Hls?.isSupported()) {
+        const hls = new Hls({ manifestLoadingMaxRetry: 6, levelLoadingMaxRetry: 6 });
+        hls.loadSource(b.videoUrl);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = b.videoUrl;
+      } else {
+        return showOverlay('이 브라우저는 HLS 재생을 지원하지 않아요.');
+      }
+      video.play().catch(() => {}); // 자동재생이 막히면 사용자가 ▶ 를 누르면 돼요
+
+      // 3) 방송 중이면 상태를 주기적으로 확인해서 종료를 표시
+      if (b.status === 'ended') {
+        notice.textContent = '종료된 라이브예요. 다시보기로 재생하고 있어요.';
+        return;
+      }
+      notice.textContent = '실시간 방송 중이에요. (HLS 특성상 5~10초 지연될 수 있어요)';
+      while (b.status === 'live') {
+        await sleep(POLL_MS);
+        b = await api(`/broadcasts/${b.id}`).catch(() => b);
+      }
+      renderInfo();
+      notice.textContent = '방송이 종료됐어요. 마지막 장면까지 재생된 뒤 멈춰요. 새로고침하면 다시보기로 볼 수 있어요.';
+    }
+
+    function showOverlay(text) {
+      overlay.hidden = false;
+      overlay.textContent = text;
+    }
+
+    function buildComments() {
+      const count = el('span', { className: 'meta' });
+      const list = el('ul', { className: 'comment-list' });
+      const root = el('aside', { className: 'comments' }, el('h2', {}, '댓글 ', count), list);
+      let editingId = null; // 수정 중엔 자동 갱신으로 입력이 날아가지 않게 멈춰요
+      let lastSig = '';
+
+      if (me) {
+        const input = el('textarea', { name: 'content', maxLength: 500, placeholder: '댓글을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)', required: true });
+        const form = el('form', { className: 'comment-form' }, input, el('button', { className: 'btn', type: 'submit', textContent: '등록' }));
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            form.requestSubmit();
+          }
+        });
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          try {
+            await send('POST', `/broadcasts/${b.id}/comments`, { content: input.value });
+            input.value = '';
+            await refresh(true);
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        root.append(form);
+      } else {
+        // 비로그인: 입력창 대신 안내 (서버도 작성 요청을 401 로 막아요)
+        root.append(el('p', { className: 'meta' }, el('a', { className: 'accent', href: loginUrl(), textContent: '로그인' }), '하고 댓글을 남겨보세요.'));
+      }
+
+      function item(c) {
+        const mine = me && c.author.id === me.id;
+        const canDelete = mine || isOwner();
+        const body = el('p', { className: 'comment-body', textContent: c.content });
+        const head = el('div', { className: 'comment-head' },
+          el('strong', { textContent: c.author.nickname }),
+          b.owner?.id === c.author.id ? el('span', { className: 'badge owner', textContent: '방송인' }) : '',
+          el('span', { className: 'meta', textContent: `${formatDate(c.createdAt)}${c.updatedAt ? ' (수정됨)' : ''}` }),
+        );
+        const actions = el('div', { className: 'comment-actions' });
+        if (mine) {
+          actions.append(el('button', { type: 'button', textContent: '수정', onclick: () => startEdit(c, li, body) }));
+        }
+        if (canDelete) {
+          actions.append(el('button', {
+            type: 'button',
+            textContent: '삭제',
+            onclick: async () => {
+              if (!confirm('댓글을 삭제할까요?')) return;
+              await send('DELETE', `/comments/${c.id}`).catch((err) => alert(err.message));
+              await refresh(true);
+            },
+          }));
+        }
+        const li = el('li', {}, head, body, actions);
+        return li;
+      }
+
+      function startEdit(c, li, body) {
+        editingId = c.id;
+        const input = el('textarea', { value: c.content, maxLength: 500 });
+        const form = el('form', { className: 'comment-form' }, input,
+          el('button', { className: 'btn', type: 'submit', textContent: '저장' }),
+          el('button', { className: 'btn ghost', type: 'button', textContent: '취소', onclick: () => { editingId = null; refresh(true); } }),
+        );
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          try {
+            await send('PATCH', `/comments/${c.id}`, { content: input.value });
+            editingId = null;
+            await refresh(true);
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        body.replaceWith(form);
+        input.focus();
+      }
+
+      async function refresh(force = false) {
+        if (editingId && !force) return;
+        const data = await api(`/broadcasts/${b.id}/comments`).catch(() => null);
+        if (!data) return;
+        const sig = JSON.stringify(data.map((c) => [c.id, c.updatedAt]));
+        if (!force && sig === lastSig) return;
+        lastSig = sig;
+        const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+        count.textContent = `${data.length}`;
+        list.replaceChildren(...(data.length ? data.map(item) : [el('li', { className: 'meta', textContent: '첫 댓글을 남겨보세요!' })]));
+        if (nearBottom || force) list.scrollTop = list.scrollHeight; // 채팅처럼 최신 댓글로
+      }
+
+      return {
+        root,
+        start() {
+          refresh(true);
+          setInterval(() => document.visibilityState === 'visible' && refresh(), POLL_MS);
+        },
+      };
     }
 
     async function exists(url) {

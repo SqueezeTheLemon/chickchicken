@@ -7,13 +7,7 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header>
-    <a class="logo" href="/">chickchicken</a>
-    <nav class="row">
-      <a class="btn ghost" href="/live">📱 라이브 시작</a>
-      <a class="btn" href="/upload">+ 영상 등록</a>
-    </nav>
-  </header>
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
   <main>
     <h1>방송 목록</h1>
     <div id="list" class="grid"></div>
@@ -21,7 +15,8 @@
   </main>
 
   <script type="module">
-    import { api, el, formatDate, statusBadge } from '/app.js';
+    import { api, el, formatDate, mountHeader, statusBadge } from '/app.js';
+    mountHeader();
 
     const list = document.getElementById('list');
     const status = document.getElementById('status');
@@ -38,7 +33,7 @@
       return el('a', { className: 'card', href: `/watch?id=${b.id}` },
         el('div', { className: 'thumb' }, preview, badge),
         el('div', { className: 'title', textContent: b.title }),
-        el('div', { className: 'meta', textContent: formatDate(b.createdAt) }),
+        el('div', { className: 'meta', textContent: `${b.owner?.nickname ?? '알 수 없음'} · ${formatDate(b.createdAt)}` }),
       );
     }
 
@@ -49,7 +44,7 @@
         status.textContent = broadcasts.length ? '' : '아직 방송이 없어요. 라이브를 시작하거나 영상을 올려보세요!';
         status.hidden = broadcasts.length > 0;
         // 내용이 같으면 다시 그리지 않아요 (썸네일 깜빡임 방지)
-        const sig = JSON.stringify(broadcasts.map((b) => [b.id, b.status]));
+        const sig = JSON.stringify(broadcasts.map((b) => [b.id, b.status, b.title]));
         if (sig !== list.dataset.sig) {
           list.dataset.sig = sig;
           list.replaceChildren(...broadcasts.map(card));

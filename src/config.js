@@ -19,4 +19,11 @@ export const config = {
   // 휴대폰 카메라(getUserMedia)는 HTTPS에서만 동작 → 인증서 경로를 주면 HTTPS로 떠요
   httpsKeyPath: process.env.HTTPS_KEY_PATH || '',
   httpsCertPath: process.env.HTTPS_CERT_PATH || '',
+
+  // 3단계: 로그인 세션
+  sessionCookieName: 'cc_session',
+  sessionTtlHours: Number(process.env.SESSION_TTL_HOURS ?? 24 * 7),
+  // HTTPS 로 서비스할 때 true (HTTPS_KEY_PATH 를 쓰면 자동으로 켜져요). 터널(https) 뒤라면 직접 true 로
+  cookieSecure:
+    process.env.COOKIE_SECURE === 'true' || Boolean(process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH),
 };

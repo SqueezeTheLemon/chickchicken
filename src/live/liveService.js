@@ -12,12 +12,17 @@ import { broadcastRepo } from '../db.js';
  *
  * 💡 진행 중인 세션(ffmpeg 프로세스, 소켓)은 메모리에만 있어요.
  *    서버가 재시작되면 이어 갈 수 없으므로 recoverStaleLives() 가 종료 처리해요.
+ * 💡 권한(로그인·소유자)은 라우터/ingest 에서 검사하고, 여기서는 송출 세션만 관리해요.
  */
 
-/** @type {Map<number, { streamKey: string, ws?: import('ws').WebSocket, ffmpeg?: import('node:child_process').ChildProcess, timer?: NodeJS.Timeout }>} */
+/**
+ * @typedef {{ streamKey: string, ws?: import('ws').WebSocket, ffmpeg?: import('node:child_process').ChildProcess,
+ *             timer?: NodeJS.Timeout, done: Promise<void>, resolveDone: () => void }} LiveSession
+ * @type {Map<number, LiveSession>}
+ */
 const sessions = new Map();
 
-const liveDirOf = (id) => path.join(config.liveDir, String(id));
+export const liveDirOf = (id) => path.join(config.liveDir, String(id));
 const playlistOf = (id) => path.join(liveDirOf(id), 'index.m3u8');
 
 // 비정상 종료로 ENDLIST 가 빠진 재생목록은 플레이어가 "아직 라이브"로 착각해요 → 직접 닫아줘요
@@ -34,6 +39,7 @@ function finish(id) {
   sessions.delete(id);
   closePlaylist(id);
   if (broadcastRepo.end(id)) console.log(`[live ${id}] ended`);
+  session?.resolveDone();
 }
 
 function spawnFfmpeg(id) {
@@ -68,19 +74,22 @@ function spawnFfmpeg(id) {
 }
 
 export const liveService = {
-  start({ title, description }) {
-    const broadcast = broadcastRepo.createLive({ title, description });
-    // 💡 로그인이 없는 단계라, 송출/종료 권한은 "시작한 사람만 아는 키"로 구분해요
+  start({ title, description, ownerId }) {
+    const broadcast = broadcastRepo.createLive({ title, description, ownerId });
+    // 💡 소유자 확인(쿠키)에 더해, "이번 송출 세션" 을 가리키는 1회용 키도 같이 검사해요
+    //    → 소유자가 다른 탭에서 같은 방송에 끼어드는 것도 막아요
     const streamKey = crypto.randomBytes(16).toString('hex');
     const timer = setTimeout(() => {
       if (!sessions.get(broadcast.id)?.ws) finish(broadcast.id);
     }, config.liveConnectTimeoutMs);
-    sessions.set(broadcast.id, { streamKey, timer });
-    console.log(`[live ${broadcast.id}] created "${broadcast.title}"`);
+    let resolveDone;
+    const done = new Promise((r) => (resolveDone = r));
+    sessions.set(broadcast.id, { streamKey, timer, done, resolveDone });
+    console.log(`[live ${broadcast.id}] created "${broadcast.title}" by user ${ownerId}`);
     return { broadcast, streamKey };
   },
 
-  /** 업그레이드 전에 송출 소켓을 받아도 되는지 검사 */
+  /** 업그레이드 전에 송출 소켓을 받아도 되는지 검사 (소유자 검사는 ingest 에서 먼저 해요) */
   canAttach(id, streamKey) {
     const session = sessions.get(id);
     return Boolean(session && !session.ws && session.streamKey === streamKey);
@@ -106,17 +115,20 @@ export const liveService = {
     });
   },
 
-  /** 종료 요청 (송출 페이지의 종료 버튼) */
-  end(id, streamKey) {
+  /**
+   * 송출 종료 (권한 검사는 호출하는 쪽에서 끝낸 뒤 불러요)
+   * @returns {Promise<boolean>} 진행 중인 송출이 있었는지. ffmpeg 마무리까지 기다려요.
+   */
+  async end(id) {
     const session = sessions.get(id);
-    if (!session) return broadcastRepo.findById(id)?.status === 'ended' ? 'already-ended' : 'not-found';
-    if (session.streamKey !== streamKey) return 'forbidden';
+    if (!session) return false;
     if (session.ws) {
       // 입력을 바로 닫아 ffmpeg 가 마무리 → close 이벤트에서 finish (소켓 close 핸드셰이크를 기다리지 않음)
       session.ffmpeg.stdin.end();
       session.ws.close(1000, 'ended');
     } else finish(id);
-    return 'ok';
+    await session.done;
+    return true;
   },
 
   /** 서버 시작 시: 이전 실행에서 방송 중으로 남은 라이브를 종료 처리 */

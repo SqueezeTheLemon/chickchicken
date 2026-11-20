@@ -3,15 +3,17 @@
 | 단계 | 내용 |
 | --- | --- |
 | ① | 인증·인가 없는 녹화방송 (VOD 등록·목록·상세·재생) |
-| **② (현재)** | **휴대폰 라이브 송출·시청**, 방송 중·종료 상태 표시 |
+| ② | 휴대폰 라이브 송출·시청, 방송 중·종료 상태 표시 |
+| **③ (현재)** | **회원가입·로그인·로그아웃, 방송 소유자 권한 검사, 댓글** |
 
 ## 기술 스택
 
 - **Node.js 22.13+** / Express 4
 - **multer**: 녹화 영상 업로드
-- **node:sqlite** (Node 내장 SQLite): 방송 정보 영속화, 별도 DB 설치 불필요
+- **node:sqlite** (Node 내장 SQLite): 사용자·세션·방송·댓글 영속화, 별도 DB 설치 불필요
 - **ws** (WebSocket): 휴대폰 → 서버 라이브 영상 전송
 - **ffmpeg**: 받은 영상을 **HLS**(`.m3u8` + `.ts`)로 변환
+- **인증**: 서버 세션 + `HttpOnly` 쿠키, 비밀번호는 Node 내장 `crypto.scrypt` 해시 (추가 라이브러리 없음)
 - 프론트엔드: 빌드 없는 정적 HTML + ES Module, 라이브 재생은 [hls.js](https://github.com/video-dev/hls.js) (CDN)
 
 ## 실행 방법
@@ -39,8 +41,10 @@ npm start              # http://localhost:3000
 | `FFMPEG_PATH` | `ffmpeg` | ffmpeg 실행 파일 경로 |
 | `HLS_SEGMENT_SECONDS` | `2` | HLS 조각 길이(초) |
 | `HTTPS_KEY_PATH` / `HTTPS_CERT_PATH` | (없음) | 지정하면 HTTPS로 실행돼요 (휴대폰 카메라용, 아래 참고) |
+| `SESSION_TTL_HOURS` | `168` | 로그인 유지 시간(시간 단위, 기본 7일) |
+| `COOKIE_SECURE` | `false` | `true`면 세션 쿠키에 `Secure`를 붙여요. HTTPS로 서비스할 때 켜요. `HTTPS_KEY_PATH`를 쓰면 자동으로 켜져요 |
 
-실제 비밀 값은 없어요. `.env`, `data/`, `certs/`는 `.gitignore`에 포함돼 있어요.
+비밀 값(세션 서명 키 등)이 필요 없는 구조예요. 세션 토큰은 서버가 랜덤으로 만들고, DB에는 해시만 저장해요. `.env`, `data/`, `certs/`는 `.gitignore`에 포함돼 있어요.
 
 ## 구현 범위
 
@@ -50,29 +54,93 @@ npm start              # http://localhost:3000
 - 목록(`/`), 상세·재생(`/watch?id=N`, HTTP Range 지원)
 - 서버를 재시작해도 등록 정보가 유지됨
 
-### ② 휴대폰 라이브 송출·시청 (이번 단계)
+### ② 휴대폰 라이브 송출·시청 (유지)
 
-- **송출 페이지 `/live`** (휴대폰)
-  - 카메라·마이크 권한을 요청하고 미리보기를 보여줘요. 전면·후면 카메라를 전환할 수 있어요.
-  - 제목을 입력하고 **● 방송 시작**을 누르면 송출이 시작돼요. 경과 시간이 표시되고, 방송 중에는 화면이 꺼지지 않게 막아요.
-  - **■ 방송 종료**를 누르면 마지막 조각까지 보낸 뒤 종료해요.
-- **시청**
-  - 목록에서 `● LIVE` 카드를 선택하면 실시간으로 시청해요(HLS, 약 5~10초 지연).
-  - 시청 중에 방송이 끝나면 "방송이 종료됐어요"가 표시돼요.
-- **상태 구분**
-  - 배지가 세 가지예요: `● LIVE`(방송 중), `종료된 라이브`, `다시보기`(업로드 영상)
-  - 방송 중인 라이브가 목록 맨 위에 와요. 목록은 10초마다 자동 갱신돼요.
-- **종료된 라이브는 다시보기로 재생돼요.** HLS 조각을 모두 보관해 두기 때문이에요.
-- **안정성**
-  - 송출 연결이 끊기면(탭 닫기, 네트워크 끊김) 자동으로 종료 처리해요. 15초 간격 ping으로 확인해요.
-  - 방송을 만들고 30초 안에 송출이 시작되지 않으면 종료 처리해요.
-  - 서버를 재시작하면 "방송 중"으로 남은 방송을 종료로 정리해요.
-- **송출 권한**
-  - 로그인이 없는 단계라서, 방송 시작 시 발급되는 `streamKey`를 아는 페이지만 송출·종료할 수 있어요.
+- **송출 페이지 `/live`** (휴대폰): 카메라·마이크 미리보기, 전면·후면 전환, **● 방송 시작** / **■ 방송 종료**
+- **시청**: 목록에서 `● LIVE` 카드를 선택하면 HLS로 실시간 시청해요(약 5~10초 지연). 방송이 끝나면 종료가 표시돼요.
+- **상태 구분**: `● LIVE`(방송 중), `종료된 라이브`, `다시보기`(업로드 영상). 방송 중인 라이브가 목록 맨 위에 와요.
+- 종료된 라이브는 다시보기로 재생돼요.
+- 연결 끊김, 30초 안에 송출 미시작, 서버 재시작 시 자동으로 종료 처리해요.
+
+### ③ 인증·인가 + 댓글 (이번 단계)
+
+- **회원가입·로그인·로그아웃** (`/signup`, `/login`, 헤더의 로그아웃 버튼)
+  - 아이디: 영문·숫자·_ 3~20자, 대소문자 구분 없이 유일
+  - 비밀번호: 8~72자, **scrypt + 사용자별 salt**로 해시해서 저장
+  - 가입하면 바로 로그인돼요.
+  - 로그인에 실패하면 "아이디 또는 비밀번호가 올바르지 않아요"만 보여줘요. 아이디가 있는지 없는지 알려주지 않아요. 응답 시간으로도 알 수 없게 했어요.
+  - 세션 토큰은 `cc_session` 쿠키(`HttpOnly`, `SameSite=Lax`)에 넣고, DB에는 **SHA-256 해시만** 저장해요.
+  - 로그아웃하면 **서버에서 세션 행을 지워서**, 같은 쿠키를 다시 써도 바로 무효예요.
+- **방송 소유자**
+  - 방송을 등록하거나 라이브를 시작한 사용자가 소유자(`owner_id`)예요.
+  - ①·②단계에서 만든 방송은 소유자가 없어요. 목록에 "알 수 없음"으로 보이고, **아무도 수정·삭제할 수 없어요.**
+- **서버 권한 검사** (화면 버튼 숨김과 별개로 **모든 요청을 서버가 검사**해요)
+  - 녹화 업로드: 로그인이 필요해요. 업로드 처리(multer)보다 **먼저** 검사해서, 비로그인 요청의 파일은 디스크에 아예 저장되지 않아요.
+  - 라이브 시작: 로그인이 필요해요.
+  - 수정·삭제·라이브 종료: **소유자만** 할 수 있어요.
+  - **송출 WebSocket**(`/ws/ingest`): 연결 요청 단계에서 ① 로그인 쿠키(401) ② 방송 소유자(403) ③ 이번 송출 세션의 `streamKey`(403)를 차례로 검사해요.
+  - 방송 중인 라이브를 삭제하면 송출을 먼저 끝내고(ffmpeg 종료까지 기다림) HLS 파일, DB 행, 댓글을 함께 지워요.
+- **댓글**
+  - 방송별 목록(최신 300개, 오래된 순)은 3초마다 자동 갱신돼요. 라이브 중에는 채팅처럼 써요.
+  - 작성: 로그인 필요, 1~500자
+  - 수정: **작성자만**
+  - 삭제: **작성자 또는 방송 소유자**(관리 목적)
+  - 방송 소유자가 쓴 댓글에는 `방송인` 배지가 붙어요.
+  - 방송을 삭제하면 댓글도 함께 지워져요(`ON DELETE CASCADE`).
 
 ### 이번 단계에서 하지 않은 것
 
-- 로그인과 권한 검사, 댓글(채팅), 도네이션
+- 도네이션, 비밀번호 변경·탈퇴, 로그인 시도 횟수 제한(rate limit)
+
+## 공개 범위
+
+| 기능 | 비로그인 | 로그인 |
+| --- | --- | --- |
+| 방송 목록 조회 (`/`, `GET /api/broadcasts`) | ✅ 공개 | ✅ |
+| 방송 상세·시청 (`/watch`, VOD·HLS 파일) | ✅ 공개 | ✅ |
+| 댓글 목록 조회 | ✅ 공개 | ✅ |
+| 녹화 등록, 라이브 시작 | ❌ 401 | ✅ |
+| 댓글 작성 | ❌ 401 | ✅ |
+| 방송 수정·삭제·라이브 종료·송출 | ❌ 401 | 소유자만 ✅ (그 외 403) |
+| 댓글 수정 | ❌ 401 | 작성자만 ✅ (그 외 403) |
+| 댓글 삭제 | ❌ 401 | 작성자 또는 방송 소유자 ✅ (그 외 403) |
+
+**목록·시청을 공개로 둔 이유**: 방송 플랫폼의 시청은 누구나 할 수 있어야 하고, 참여(방송하기, 댓글)만 계정에 묶는 게 자연스러워요. 그래서 "보는 것"은 공개, "쓰는 것"은 로그인, "바꾸는 것"은 소유자 또는 작성자로 나눴어요.
+
+### 401 / 403 / 404 기준
+
+- **401**: 로그인하지 않았어요(쿠키가 없거나, 만료되거나, 로그아웃된 세션).
+- **403**: 로그인은 했지만 권한이 없어요(남의 방송, 남의 댓글).
+- **404**: 대상이 없어요. 존재 확인을 먼저 하기 때문에, 없는 방송에는 누가 요청해도 404예요.
+
+### 보안 메모
+
+- **CSRF**: 세션 쿠키가 `SameSite=Lax`라서 다른 사이트에서 보낸 POST·PATCH·DELETE·WebSocket 요청에는 쿠키가 붙지 않아요.
+- **XSS**: 댓글을 포함한 모든 사용자 입력은 `textContent`로 넣어요(`innerHTML` 미사용). 쿠키는 `HttpOnly`라서 JS로 읽을 수도 없어요.
+- **오픈 리다이렉트**: 로그인 후 이동하는 `next`는 `/`로 시작하는 같은 사이트 경로만 허용해요.
+- **HTTPS 터널 뒤에서 운영할 때**는 `COOKIE_SECURE=true`를 권장해요.
+
+## API
+
+| 메서드 | 경로 | 권한 | 설명 |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/signup` | 공개 | `{ username, nickname, password }` → 201 + 세션 쿠키 |
+| `POST` | `/api/auth/login` | 공개 | `{ username, password }` → 200 + 세션 쿠키 / 401 |
+| `POST` | `/api/auth/logout` | 공개 | 세션 삭제 + 쿠키 제거 → 204 |
+| `GET` | `/api/auth/me` | 공개 | `{ user }` (비로그인이면 `null`) |
+| `GET` | `/api/broadcasts` | 공개 | 방송 목록 (`owner` 포함) |
+| `GET` | `/api/broadcasts/:id` | 공개 | 방송 상세 |
+| `POST` | `/api/broadcasts` | 로그인 | 녹화 업로드 (`multipart/form-data`: `title`, `description`, `video`) |
+| `PATCH` | `/api/broadcasts/:id` | 소유자 | `{ title, description }` 수정 |
+| `DELETE` | `/api/broadcasts/:id` | 소유자 | 방송·파일·댓글 삭제 → 204 |
+| `POST` | `/api/lives` | 로그인 | 라이브 시작 → `{ broadcast, streamKey }` |
+| `POST` | `/api/lives/:id/end` | 소유자 | 라이브 종료 |
+| `WS` | `/ws/ingest?id=N&key=…` | 소유자 + streamKey | 송출 영상 전송 (binary) |
+| `GET` | `/api/broadcasts/:id/comments` | 공개 | 댓글 목록 |
+| `POST` | `/api/broadcasts/:id/comments` | 로그인 | `{ content }` 댓글 작성 → 201 |
+| `PATCH` | `/api/comments/:commentId` | 작성자 | `{ content }` 댓글 수정 |
+| `DELETE` | `/api/comments/:commentId` | 작성자·방송 소유자 | 댓글 삭제 → 204 |
+| `GET` | `/videos/:file`, `/hls/:id/*` | 공개 | 영상 파일 / HLS 재생목록·조각 |
 
 ## 라이브 구조
 
@@ -80,20 +148,10 @@ npm start              # http://localhost:3000
 [휴대폰 /live]                         [서버]                                  [시청자 /watch]
 getUserMedia (카메라·마이크)
   → MediaRecorder (1초 단위 webm/mp4)
-  ──WebSocket /ws/ingest?id&key──▶  ffmpeg stdin
-                                    → H.264/AAC 로 변환
+  ──WebSocket /ws/ingest?id&key──▶  쿠키·소유자·streamKey 검사
+       (세션 쿠키 자동 포함)           → ffmpeg stdin → H.264/AAC
                                     → data/live/{id}/index.m3u8 + seg_*.ts ◀── GET /hls/{id}/index.m3u8 (hls.js)
 ```
-
-| 메서드 | 경로 | 설명 |
-| --- | --- | --- |
-| `GET` | `/api/broadcasts` | 전체 방송 목록 (방송 중인 라이브가 먼저) |
-| `GET` | `/api/broadcasts/:id` | 방송 상세: `kind`(vod/live), `status`(live/ended), `videoUrl` |
-| `POST` | `/api/broadcasts` | 녹화 영상 업로드 (`multipart/form-data`: `title`, `description`, `video`) |
-| `POST` | `/api/lives` | 라이브 시작 (`{ title, description }`) → `{ broadcast, streamKey }` |
-| `POST` | `/api/lives/:id/end` | 라이브 종료 (`{ streamKey }`) |
-| `WS` | `/ws/ingest?id=N&key=…` | 송출 영상 전송 (binary) |
-| `GET` | `/videos/:file`, `/hls/:id/*` | 영상 파일 / HLS 재생목록·조각 |
 
 ## 휴대폰 접속 환경 ⚠️
 
@@ -107,7 +165,7 @@ npm start
 cloudflared tunnel --url http://localhost:3000
 ```
 
-출력된 `https://xxxx.trycloudflare.com` 주소를 휴대폰과 시청 화면 양쪽에서 열면 돼요. WebSocket도 터널을 그대로 통과해요.
+출력된 `https://xxxx.trycloudflare.com` 주소를 휴대폰과 시청 화면 양쪽에서 열면 돼요. WebSocket도 터널을 그대로 통과해요. 이 방식으로 계속 운영한다면 `.env`에 `COOKIE_SECURE=true`를 권장해요.
 
 ### 방법 B: 같은 와이파이 + mkcert 로컬 HTTPS
 
@@ -128,57 +186,92 @@ npm start   # 콘솔에 표시되는 "LAN → https://192.168.x.x:3000" 주소�
 
 ### 지원 브라우저
 
-- **Android Chrome**: webm(VP8/Opus)으로 녹화해 송출해요. 검증한 방식이에요.
+- **Android Chrome**: webm(VP8/Opus)으로 녹화해 송출해요.
 - **iOS Safari 14.3+**: mp4로 녹화해 송출해요. ffmpeg가 변환해 주지만, 기기·버전에 따라 차이가 있을 수 있어요.
 - **시청**: PC Chrome·Edge·Firefox는 hls.js로, Safari와 iOS는 기본 HLS로 재생해요.
 
 ## 직접 확인 절차
 
-### ① 녹화방송
+### ③ 권한 검사 — 자동 점검 스크립트 (화면 없이 API 직접 호출)
 
-1. `npm start` → `http://localhost:3000`에 접속해서 빈 목록을 확인해요.
-2. **+ 영상 등록**에서 제목을 입력하고 mp4를 올려요 → 상세 화면에서 재생되고 탐색이 되는지 확인해요.
-3. 목록으로 돌아가 `다시보기` 카드가 보이는지 확인해요.
-4. 서버를 재시작(`Ctrl+C` → `npm start`)해도 목록·재생이 그대로인지 확인해요.
+화면에서 버튼을 숨기는 것과 상관없이 **서버가 직접 막는지** 확인하는 스크립트예요. 비로그인 사용자, 소유자(alice), 다른 사용자(bob)로 요청을 보내고, 허용·거절 결과를 표로 보여줘요.
 
-### ② 라이브 (휴대폰 송출 → 다른 화면 시청)
+```bash
+npm start                 # 터미널 1
+npm run verify:auth       # 터미널 2 (BASE_URL 기본값 http://localhost:3000)
+```
 
-1. **접속 준비**: 위 "휴대폰 접속 환경"의 방법 A 또는 B로 HTTPS 주소를 만들어요.
-2. **휴대폰**: HTTPS 주소로 접속 → **📱 라이브 시작**(`/live`)을 눌러요.
-3. **권한 허용**: 브라우저가 카메라·마이크 권한을 물으면 **허용**해요.
-   - 실수로 거부했다면 주소창의 🔒(또는 aA) → 사이트 설정 → 카메라·마이크를 "허용"으로 바꾸고 새로고침해요.
-   - 미리보기에 내 얼굴이 보이면 준비가 끝난 거예요. 🔄로 후면 카메라로 바꿀 수 있어요.
-4. **송출 시작 확인**: 제목을 입력하고 **● 방송 시작**을 눌러요.
-   - 휴대폰 상단에 빨간 `● LIVE 00:01`이 표시되고 시간이 올라가요.
-   - 서버 콘솔에 `[live N] ingest connected`가 찍혀요.
-   - `data/live/N/`에 `index.m3u8`과 `seg_00000.ts` 같은 파일이 2초마다 생겨요.
-5. **다른 화면(PC 등)에서 시청**: 같은 주소의 목록(`/`)으로 들어가요. 10초 안에 맨 위에 `● LIVE` 카드가 나타나요.
-   - 카드를 클릭하면 "방송 준비 중"이 잠깐 보인 뒤, 약 5~10초 늦게 휴대폰 화면과 소리가 재생돼요.
-   - 휴대폰에 표시되는 시청 주소를 그대로 열어도 돼요.
-6. **송출 종료 확인**: 휴대폰에서 **■ 방송 종료**를 눌러요.
-   - 휴대폰에 "방송이 종료됐어요"가 표시돼요.
-   - 서버 콘솔에 `[live N] ended`가 찍혀요.
-   - 시청 화면은 몇 초 안에 배지가 `종료된 라이브`로 바뀌고, 남은 장면까지 재생한 뒤 멈춰요.
-   - 목록의 카드도 `종료된 라이브`로 바뀌고, 클릭하면 처음부터 다시보기로 재생돼요.
-7. **비정상 종료 확인**: 방송 중에 휴대폰 탭을 그냥 닫아요 → 수십 초 안에 종료 상태로 바뀌는지 확인해요.
-8. **재시작 확인**: 서버를 재시작해도 종료된 라이브와 녹화방송이 목록에 남아 있고, 재생되는지 확인해요.
+- 실행할 때마다 랜덤 아이디로 가입하니 기존 데이터와 섞이지 않아요. 단, 점검용 방송과 사용자는 DB에 남아요.
+- 라이브 송출 소켓 검사에는 ffmpeg로 만든 테스트 영상을 써요.
+- 하나라도 기대와 다르면 `✘`가 표시되고, 종료 코드 1로 끝나요.
+
+### ③ 권한 검사 — 화면에서 직접
+
+1. **비로그인**: 목록과 방송 시청, 댓글 목록은 보여요. 댓글 입력창 대신 "로그인하고 댓글을 남겨보세요"가 보여요. `/upload`나 `/live`에 들어가면 로그인 페이지로 이동해요.
+2. **회원가입(alice)**: 헤더에 "alice님"이 보여요. 영상을 등록하면 상세 화면에 **✏️ 수정 / 🗑 삭제** 버튼이 보여요. 제목을 수정하고 댓글을 달아봐요(`방송인` 배지).
+3. **다른 브라우저나 시크릿 창에서 회원가입(bob)**: alice의 방송에 수정·삭제 버튼이 없어요. 댓글은 쓸 수 있고, 내 댓글만 수정·삭제할 수 있어요.
+4. **alice 창**: bob의 댓글에 **삭제**만 보여요(방송 소유자의 관리 권한). 수정은 안 보여요.
+5. **버튼 숨김이 아니라는 확인** (bob 창의 개발자 도구 콘솔에서 alice 방송 id로 직접 요청):
+
+   ```js
+   await fetch('/api/broadcasts/<alice방송id>', { method: 'DELETE' }).then(r => r.status)   // 403
+   await fetch('/api/broadcasts/<alice방송id>', { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: 'hack' }) }).then(r => r.status) // 403
+   ```
+
+   로그아웃한 창에서 같은 요청을 보내면 `401`이에요.
+6. **로그아웃**: 헤더의 로그아웃을 누르면 비로그인 화면으로 돌아가요. 그 상태에서 5번 요청을 다시 보내면 `401`이에요.
+7. **재시작**: 서버를 재시작해도 로그인이 유지되고(세션이 DB에 있음), 방송·댓글이 남아 있는지 확인해요.
+
+### curl로 확인하기 (선택)
+
+```bash
+B=http://localhost:3000
+curl -s -c alice.txt -H 'Content-Type: application/json' -d '{"username":"alice1","nickname":"앨리스","password":"password123"}' $B/api/auth/signup
+curl -s -c bob.txt   -H 'Content-Type: application/json' -d '{"username":"bob1","nickname":"밥","password":"password123"}' $B/api/auth/signup
+curl -s -o /dev/null -w '%{http_code}\n' -F title=x -F video=@sample.mp4 $B/api/broadcasts                 # 401 (비로그인)
+curl -s -b alice.txt -F title=내방송 -F video=@sample.mp4 $B/api/broadcasts                                 # 201 → id 확인
+curl -s -o /dev/null -w '%{http_code}\n' -b bob.txt -X DELETE $B/api/broadcasts/<id>                         # 403 (다른 사용자)
+curl -s -o /dev/null -w '%{http_code}\n' -b alice.txt -X DELETE $B/api/broadcasts/<id>                       # 204 (소유자)
+```
+
+### ① 녹화방송 · ② 라이브 (이전 단계, 이제 로그인 후 진행)
+
+1. 로그인 → **+ 영상 등록**에서 mp4를 올려요 → 상세 화면에서 재생과 탐색이 되는지 확인해요.
+2. HTTPS 주소(위 "휴대폰 접속 환경")로 **휴대폰에서 로그인** → **📱 라이브 시작** → 카메라·마이크 권한을 **허용**해요.
+   - 거부했다면 주소창의 🔒(또는 aA) → 사이트 설정 → 카메라·마이크를 허용하고 새로고침해요.
+3. **● 방송 시작**을 눌러요.
+   - 휴대폰에 `● LIVE 00:01`이 표시되고, 서버 콘솔에 `[live N] ingest connected`가 찍혀요.
+4. 다른 화면에서 목록 → `● LIVE` 카드 → 5~10초 지연된 영상과 소리가 재생돼요. 댓글을 달면 3초 안에 휴대폰을 포함한 다른 시청 화면에도 보여요.
+5. 휴대폰에서 **■ 방송 종료**를 눌러요.
+   - 서버 콘솔에 `[live N] ended`가 찍히고, 시청 화면이 `종료된 라이브`로 바뀌어요.
+   - 소유자는 시청 화면의 **■ 방송 종료** 버튼으로도 끝낼 수 있어요.
+6. 서버를 재시작해도 방송·다시보기·댓글이 남아 있는지 확인해요.
 
 ## 폴더 구조
 
 ```
 src/
-  server.js              진입점: HTTP/HTTPS 서버, WebSocket 연결, 종료 처리
-  app.js                 Express 앱 조립, 정적 파일(/videos, /live), 에러 처리
+  server.js              진입점: HTTP/HTTPS 서버, WebSocket 연결, 종료 처리, 만료 세션 정리
+  app.js                 Express 앱 조립 (loadUser → 라우터), 정적 파일, 에러 처리
   config.js              환경변수 → 설정
   db.js                  SQLite 스키마·마이그레이션 + broadcastRepo
-  routes/broadcasts.js   방송 목록·상세·녹화 업로드 API
-  routes/lives.js        라이브 시작·종료 API
+  asyncHandler.js        async 라우트 에러 전달
+  auth/passwords.js      scrypt 해시·검증
+  auth/middleware.js     쿠키 → req.user, requireAuth(401), requireBroadcastOwner(403)
+  repos/                 userRepo, sessionRepo, commentRepo
+  routes/auth.js         회원가입·로그인·로그아웃·me
+  routes/broadcasts.js   방송 목록·상세·업로드·수정·삭제
+  routes/lives.js        라이브 시작·종료
+  routes/comments.js     댓글 목록·작성·수정·삭제
   live/liveService.js    라이브 세션 관리, ffmpeg → HLS 변환
-  live/ingest.js         송출 WebSocket(/ws/ingest) 수신, 하트비트
+  live/ingest.js         송출 WebSocket 수신 (쿠키·소유자·streamKey 검사), 하트비트
 public/
-  index.html             방송 목록 (상태 배지, 자동 갱신)
-  watch.html             상세·재생 (VOD / HLS 라이브)
+  index.html             방송 목록
+  watch.html             상세·재생, 소유자 제어, 댓글
   live.html              휴대폰 송출
   upload.html            녹화 영상 등록
-  app.js, style.css      공통 유틸·스타일
+  login.html, signup.html
+  app.js, style.css      공통 유틸(로그인 상태·헤더)·스타일
+scripts/
+  verify-auth.mjs        권한 매트릭스 자동 점검 (npm run verify:auth)
 ```

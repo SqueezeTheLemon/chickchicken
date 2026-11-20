@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 회원가입</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
+  <main>
+    <h1>회원가입</h1>
+    <form id="form" class="auth-form">
+      <label>아이디 <span class="hint">영문·숫자·_ 3~20자</span>
+        <input name="username" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" autocomplete="username" />
+      </label>
+      <label>닉네임 <span class="hint">방송·댓글에 보이는 이름</span>
+        <input name="nickname" required maxlength="20" />
+      </label>
+      <label>비밀번호 <span class="hint">8자 이상</span>
+        <input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password" />
+      </label>
+      <p id="msg" class="msg"></p>
+      <button class="btn" type="submit">가입하고 시작하기</button>
+      <p class="meta">이미 계정이 있나요? <a id="login-link" class="accent" href="/login">로그인</a></p>
+    </form>
+  </main>
+
+  <script type="module">
+    import { send, safeNext } from '/app.js';
+
+    const form = document.getElementById('form');
+    const msg = document.getElementById('msg');
+    document.getElementById('login-link').href = `/login?next=${encodeURIComponent(safeNext())}`;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await send('POST', '/auth/signup', Object.fromEntries(new FormData(form)));
+        location.href = safeNext(); // 가입하면 바로 로그인 상태예요
+      } catch (err) {
+        msg.className = 'msg error';
+        msg.textContent = err.message;
+      }
+    });
+  </script>
+</body>
+</html>

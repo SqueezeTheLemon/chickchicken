@@ -7,11 +7,9 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header>
-    <a class="logo" href="/">chickchicken</a>
-    <span id="badge" class="live-badge" hidden>● LIVE <span id="elapsed">00:00</span></span>
-  </header>
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
   <main class="studio">
+    <span id="badge" class="live-badge" hidden>● LIVE <span id="elapsed">00:00</span></span>
     <video id="preview" class="player preview" autoplay muted playsinline></video>
 
     <p id="secure-warn" class="msg error" hidden>
@@ -40,7 +38,10 @@
   </main>
 
   <script type="module">
-    import { api } from '/app.js';
+    import { api, mountHeader, requireLogin, send } from '/app.js';
+    mountHeader();
+    // 비로그인이면 로그인 페이지로 (편의 기능, 서버도 시작 API·송출 소켓을 401 로 막아요)
+    if (!(await requireLogin())) throw new Error('login required');
 
     const $ = (id) => document.getElementById(id);
     const preview = $('preview');
@@ -186,12 +187,8 @@
       say('방송을 종료하고 있어요…');
       recorder.stop(); // → 마지막 dataavailable → onstop → 소켓 닫기
       await new Promise((r) => ws.addEventListener('close', r, { once: true }));
-      // 소켓 종료로 서버가 이미 처리하지만, 확실하게 한 번 더 알려요
-      await api(`/lives/${live.broadcast.id}/end`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ streamKey: live.streamKey }),
-      }).catch(() => {});
+      // 소켓 종료로 서버가 이미 처리하지만, 확실하게 한 번 더 알려요 (서버가 쿠키로 소유자인지 검사)
+      await send('POST', `/lives/${live.broadcast.id}/end`).catch(() => {});
       say('방송이 종료됐어요. 시청 주소에서 다시보기로 볼 수 있어요. 🙌');
     };
 

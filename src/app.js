@@ -1,16 +1,24 @@
 import path from 'node:path';
 import express from 'express';
 import multer from 'multer';
+import { loadUser } from './auth/middleware.js';
 import { config } from './config.js';
+import { authRouter } from './routes/auth.js';
 import { broadcastsRouter } from './routes/broadcasts.js';
+import { commentsRouter } from './routes/comments.js';
 import { livesRouter } from './routes/lives.js';
 
 export function createApp() {
   const app = express();
   const publicDir = path.resolve('public');
 
+  // 💡 모든 API 요청에서 쿠키 → req.user (비로그인이면 undefined). 막는 건 각 라우트의 requireAuth 몫
+  app.use('/api', loadUser);
+  app.use('/api/auth', authRouter);
+  app.use('/api', commentsRouter); // /api/broadcasts/:id/comments, /api/comments/:commentId
   app.use('/api/broadcasts', broadcastsRouter);
   app.use('/api/lives', livesRouter);
+  app.use('/api', (_req, res) => res.status(404).json({ error: '찾을 수 없어요.' }));
 
   // 💡 express.static은 Range 요청(206 Partial Content)을 지원해서 영상 탐색(seek)이 돼요
   app.use('/videos', express.static(config.uploadDir, { fallthrough: false }));

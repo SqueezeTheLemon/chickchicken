@@ -128,3 +128,37 @@ progress { width: 100%; }
 .studio form { max-width: none; }
 .preview.mirror { transform: scaleX(-1); } /* 전면 카메라는 거울처럼 보여야 자연스러워요 */
 #on-air[hidden], .live-badge[hidden] { display: none; }
+
+/* ---------- 3단계: 로그인 · 댓글 ---------- */
+.who { color: var(--muted); font-size: 14px; }
+.auth-form { max-width: 400px; }
+.hint { color: var(--muted); font-weight: 400; font-size: 13px; }
+.badge.owner { background: var(--accent); color: #000; }
+
+.owner-bar { margin: 8px 0; }
+.edit-form { max-width: none; margin: 8px 0 16px; }
+.edit-form[hidden] { display: none; }
+
+.watch { max-width: 1400px; }
+.watch-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+@media (max-width: 900px) { .watch-layout { grid-template-columns: 1fr; } }
+
+.comments {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; display: grid; gap: 12px;
+}
+.comments h2 { font-size: 16px; margin: 0; }
+.comment-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 12px; max-height: 60vh; overflow-y: auto;
+}
+.comment-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.comment-head .meta { font-size: 12px; }
+.comment-body { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.comment-actions { display: flex; gap: 8px; }
+.comment-actions button {
+  background: none; border: none; padding: 0; color: var(--muted); font-size: 12px; cursor: pointer;
+}
+.comment-actions button:hover { color: var(--text); }
+.comment-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; max-width: none; }
+.comment-form textarea { min-height: 44px; }

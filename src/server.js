@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { config } from './config.js';
 import { attachIngest } from './live/ingest.js';
 import { liveService } from './live/liveService.js';
+import { sessionRepo } from './repos/sessionRepo.js';
 
 const app = createApp();
 const useHttps = Boolean(config.httpsKeyPath && config.httpsCertPath);
@@ -15,6 +16,10 @@ const server = useHttps
 
 attachIngest(server);
 liveService.recoverStaleLives();
+
+// 만료된 로그인 세션은 시작할 때와 1시간마다 정리해요
+sessionRepo.deleteExpired();
+setInterval(() => sessionRepo.deleteExpired(), 60 * 60 * 1000).unref();
 
 server.listen(config.port, () => {
   const scheme = useHttps ? 'https' : 'http';
