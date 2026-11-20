@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>chickchicken · 라이브 송출</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <a class="logo" href="/">chickchicken</a>
+    <span id="badge" class="live-badge" hidden>● LIVE <span id="elapsed">00:00</span></span>
+  </header>
+  <main class="studio">
+    <video id="preview" class="player preview" autoplay muted playsinline></video>
+
+    <p id="secure-warn" class="msg error" hidden>
+      이 주소는 보안 연결(HTTPS)이 아니라서 카메라를 쓸 수 없어요. README의 "휴대폰 접속 환경"을 참고해 HTTPS 주소로 접속해 주세요.
+    </p>
+
+    <form id="form">
+      <label>방송 제목
+        <input name="title" required maxlength="100" placeholder="예) 동네 산책 라이브" />
+      </label>
+      <label>설명 (선택)
+        <textarea name="description" placeholder="방송 소개"></textarea>
+      </label>
+      <div class="row">
+        <button class="btn ghost" type="button" id="flip">🔄 카메라 전환</button>
+        <button class="btn" type="submit" id="start">● 방송 시작</button>
+      </div>
+    </form>
+
+    <div id="on-air" hidden>
+      <p class="meta">시청 주소: <a id="watch-link" class="accent" target="_blank"></a></p>
+      <button class="btn danger" id="stop">■ 방송 종료</button>
+    </div>
+
+    <p id="msg" class="msg"></p>
+  </main>
+
+  <script type="module">
+    import { api } from '/app.js';
+
+    const $ = (id) => document.getElementById(id);
+    const preview = $('preview');
+    const form = $('form');
+    const msg = $('msg');
+
+    let facingMode = 'user'; // 'user' 전면 · 'environment' 후면
+    let stream, recorder, ws, live, timer, wakeLock;
+    let ending = false;
+
+    const say = (text, isError = false) => {
+      msg.className = isError ? 'msg error' : 'msg';
+      msg.textContent = text;
+    };
+
+    // 💡 휴대폰 브라우저마다 녹화 가능한 형식이 달라요 (Android Chrome: webm, iOS Safari: mp4)
+    const MIME_CANDIDATES = [
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=vp9,opus',
+      'video/webm',
+      'video/mp4;codecs=avc1,mp4a',
+      'video/mp4',
+    ];
+    const pickMime = () => MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+
+    async function openCamera() {
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      preview.srcObject = stream;
+      preview.classList.toggle('mirror', facingMode === 'user');
+    }
+
+    async function init() {
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        $('secure-warn').hidden = false;
+        $('start').disabled = $('flip').disabled = true;
+        return;
+      }
+      if (typeof MediaRecorder === 'undefined' || !pickMime()) {
+        say('이 브라우저는 녹화(MediaRecorder)를 지원하지 않아요. 최신 Chrome/Safari 를 써주세요.', true);
+        $('start').disabled = true;
+        return;
+      }
+      try {
+        await openCamera();
+      } catch (e) {
+        say(`카메라·마이크를 열 수 없어요: ${e.message}. 브라우저 주소창의 권한 설정에서 허용해 주세요.`, true);
+        $('start').disabled = true;
+      }
+    }
+
+    $('flip').onclick = async () => {
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      try { await openCamera(); } catch (e) { say(e.message, true); }
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('start').disabled = true;
+      say('방송을 준비하고 있어요…');
+      try {
+        const data = Object.fromEntries(new FormData(form));
+        live = await api('/lives', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        connect();
+      } catch (err) {
+        say(err.message, true);
+        $('start').disabled = false;
+      }
+    });
+
+    function connect() {
+      const { broadcast, streamKey } = live;
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${scheme}://${location.host}/ws/ingest?id=${broadcast.id}&key=${streamKey}`);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        recorder = new MediaRecorder(stream, { mimeType: pickMime(), videoBitsPerSecond: 2_500_000 });
+        // 1초마다 조각을 만들어 바로 서버로 보내요
+        recorder.ondataavailable = (ev) => {
+          if (ev.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(ev.data);
+        };
+        recorder.onstop = () => closeSocketWhenFlushed();
+        recorder.start(1000);
+        onAir(broadcast);
+      };
+      ws.onclose = () => {
+        if (!ending) {
+          say('서버와 연결이 끊겨 방송이 종료됐어요.', true);
+          recorder?.state === 'recording' && recorder.stop();
+        }
+        offAir();
+      };
+    }
+
+    function onAir(broadcast) {
+      form.hidden = true;
+      $('on-air').hidden = false;
+      $('badge').hidden = false;
+      const url = `${location.origin}/watch?id=${broadcast.id}`;
+      $('watch-link').href = url;
+      $('watch-link').textContent = url;
+      say('방송 중이에요! 다른 화면에서 시청 주소로 들어가 보세요. (HLS 특성상 5~10초 지연돼요)');
+
+      const startedAt = Date.now();
+      timer = setInterval(() => {
+        const s = Math.floor((Date.now() - startedAt) / 1000);
+        $('elapsed').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      }, 1000);
+      // 방송 중 화면 꺼짐 방지 (지원 브라우저만)
+      navigator.wakeLock?.request('screen').then((l) => (wakeLock = l)).catch(() => {});
+    }
+
+    function offAir() {
+      clearInterval(timer);
+      wakeLock?.release().catch(() => {});
+      $('badge').hidden = true;
+      $('stop').disabled = true;
+      if (live) {
+        $('on-air').hidden = false;
+        $('stop').hidden = true;
+      }
+      stream?.getTracks().forEach((t) => t.stop());
+    }
+
+    // 마지막 조각까지 전송된 뒤 소켓을 닫아요 → 서버가 ffmpeg 를 마무리하고 "종료" 처리
+    function closeSocketWhenFlushed() {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (ws.bufferedAmount > 0) return setTimeout(closeSocketWhenFlushed, 100);
+      ws.close(1000, 'ended');
+    }
+
+    $('stop').onclick = async () => {
+      ending = true;
+      $('stop').disabled = true;
+      say('방송을 종료하고 있어요…');
+      recorder.stop(); // → 마지막 dataavailable → onstop → 소켓 닫기
+      await new Promise((r) => ws.addEventListener('close', r, { once: true }));
+      // 소켓 종료로 서버가 이미 처리하지만, 확실하게 한 번 더 알려요
+      await api(`/lives/${live.broadcast.id}/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ streamKey: live.streamKey }),
+      }).catch(() => {});
+      say('방송이 종료됐어요. 시청 주소에서 다시보기로 볼 수 있어요. 🙌');
+    };
+
+    window.addEventListener('beforeunload', (e) => {
+      if (recorder?.state === 'recording') e.preventDefault();
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -3,47 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>chickchicken · 다시보기</title>
+  <title>chickchicken · 방송 목록</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header>
     <a class="logo" href="/">chickchicken</a>
-    <a class="btn" href="/upload">+ 영상 등록</a>
+    <nav class="row">
+      <a class="btn ghost" href="/live">📱 라이브 시작</a>
+      <a class="btn" href="/upload">+ 영상 등록</a>
+    </nav>
   </header>
   <main>
-    <h1>다시보기</h1>
+    <h1>방송 목록</h1>
     <div id="list" class="grid"></div>
     <p id="status" class="empty">불러오는 중…</p>
   </main>
 
   <script type="module">
-    import { api, el, formatDate } from '/app.js';
+    import { api, el, formatDate, statusBadge } from '/app.js';
 
     const list = document.getElementById('list');
     const status = document.getElementById('status');
+    const REFRESH_MS = 10_000; // 새 라이브 시작·종료를 반영하려고 주기적으로 갱신해요
 
-    try {
-      const broadcasts = await api('/broadcasts');
-      status.textContent = broadcasts.length ? '' : '아직 등록된 방송이 없어요. 첫 영상을 올려보세요!';
-      if (broadcasts.length) status.remove();
+    function card(b) {
+      // 다시보기는 첫 프레임을 썸네일로, 라이브(HLS)는 단색 카드로 보여줘요
+      const preview = b.kind === 'vod'
+        ? el('video', { src: `${b.videoUrl}#t=1`, preload: 'metadata', muted: true })
+        : el('div', { className: `live-thumb ${b.status}`, textContent: b.status === 'live' ? '📡 ON AIR' : '📼 LIVE 다시보기' });
+      const badge = statusBadge(b);
+      badge.classList.add('corner');
 
-      for (const b of broadcasts) {
-        // #t=1 → 첫 프레임을 썸네일처럼 보여줘요 (preload=metadata)
-        const thumb = el('div', { className: 'thumb' },
-          el('video', { src: `${b.videoUrl}#t=1`, preload: 'metadata', muted: true }),
-          el('span', { className: 'badge', textContent: '다시보기' }),
-        );
-        list.append(el('a', { className: 'card', href: `/watch?id=${b.id}` },
-          thumb,
-          el('div', { className: 'title', textContent: b.title }),
-          el('div', { className: 'meta', textContent: formatDate(b.createdAt) }),
-        ));
-      }
-    } catch (e) {
-      status.className = 'error';
-      status.textContent = e.message;
+      return el('a', { className: 'card', href: `/watch?id=${b.id}` },
+        el('div', { className: 'thumb' }, preview, badge),
+        el('div', { className: 'title', textContent: b.title }),
+        el('div', { className: 'meta', textContent: formatDate(b.createdAt) }),
+      );
     }
+
+    async function render() {
+      try {
+        const broadcasts = await api('/broadcasts');
+        status.className = 'empty';
+        status.textContent = broadcasts.length ? '' : '아직 방송이 없어요. 라이브를 시작하거나 영상을 올려보세요!';
+        status.hidden = broadcasts.length > 0;
+        // 내용이 같으면 다시 그리지 않아요 (썸네일 깜빡임 방지)
+        const sig = JSON.stringify(broadcasts.map((b) => [b.id, b.status]));
+        if (sig !== list.dataset.sig) {
+          list.dataset.sig = sig;
+          list.replaceChildren(...broadcasts.map(card));
+        }
+      } catch (e) {
+        status.hidden = false;
+        status.className = 'error';
+        status.textContent = e.message;
+      }
+    }
+
+    render();
+    setInterval(render, REFRESH_MS);
   </script>
 </body>
 </html>

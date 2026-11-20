@@ -8,5 +8,15 @@ export const config = {
   dataDir: DATA_DIR,
   dbPath: path.join(DATA_DIR, 'chickchicken.db'),
   uploadDir: path.join(DATA_DIR, 'videos'),
+  liveDir: path.join(DATA_DIR, 'live'),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 500) * 1024 * 1024,
+
+  // 라이브(HLS) 설정
+  ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+  hlsSegmentSeconds: Number(process.env.HLS_SEGMENT_SECONDS ?? 2),
+  liveConnectTimeoutMs: 30_000, // 방송 생성 후 이 시간 안에 송출이 안 붙으면 종료 처리
+
+  // 휴대폰 카메라(getUserMedia)는 HTTPS에서만 동작 → 인증서 경로를 주면 HTTPS로 떠요
+  httpsKeyPath: process.env.HTTPS_KEY_PATH || '',
+  httpsCertPath: process.env.HTTPS_CERT_PATH || '',
 };
