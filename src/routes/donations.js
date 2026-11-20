@@ -15,29 +15,29 @@ donationsRouter.get('/payments/config', (_req, res) => {
 });
 
 // 공개: 방송별 후원 내역(확정된 것만)과 합계
-donationsRouter.get('/broadcasts/:id/donations', (req, res) => {
+donationsRouter.get('/broadcasts/:id/donations', asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || !broadcastRepo.findById(id)) return res.status(404).json({ error: '방송을 찾을 수 없어요.' });
-  const donations = donationRepo.listDoneByBroadcast(id).map(({ id: did, donor, amount, message, approvedAt }) => ({
+  if (!Number.isInteger(id) || !(await broadcastRepo.findById(id))) return res.status(404).json({ error: '방송을 찾을 수 없어요.' });
+  const donations = (await donationRepo.listDoneByBroadcast(id)).map(({ id: did, donor, amount, message, approvedAt }) => ({
     id: did,
     donor,
     amount,
     message,
     approvedAt,
   }));
-  res.json({ ...donationRepo.summaryByBroadcast(id), donations });
-});
+  res.json({ ...(await donationRepo.summaryByBroadcast(id)), donations });
+}));
 
 // 로그인 필요: 후원 주문 만들기 → 결제창에 넘길 정보
-donationsRouter.post('/broadcasts/:id/donations', requireAuth, (req, res) => {
-  const order = donationService.createOrder({
+donationsRouter.post('/broadcasts/:id/donations', requireAuth, asyncHandler(async (req, res) => {
+  const order = await donationService.createOrder({
     broadcastId: Number(req.params.id),
     donor: req.user,
     amount: Number(req.body?.amount),
     message: req.body?.message,
   });
   res.status(201).json(order);
-});
+}));
 
 // 로그인 필요(주문자): 결제 승인 확인 → 서버 검증 후 확정
 donationsRouter.post(
@@ -50,16 +50,16 @@ donationsRouter.post(
 );
 
 // 로그인 필요(주문자): 결제창 실패·취소 보고
-donationsRouter.post('/donations/:orderId/fail', requireAuth, (req, res) => {
-  res.json(donationService.reportFailure({ orderId: req.params.orderId, code: req.body?.code, message: req.body?.message, user: req.user }));
-});
+donationsRouter.post('/donations/:orderId/fail', requireAuth, asyncHandler(async (req, res) => {
+  res.json(await donationService.reportFailure({ orderId: req.params.orderId, code: req.body?.code, message: req.body?.message, user: req.user }));
+}));
 
 // 로그인 필요(주문자): 내 주문 상태 조회
-donationsRouter.get('/donations/:orderId', requireAuth, (req, res) => {
-  const donation = donationRepo.findByOrderId(req.params.orderId);
+donationsRouter.get('/donations/:orderId', requireAuth, asyncHandler(async (req, res) => {
+  const donation = await donationRepo.findByOrderId(req.params.orderId);
   if (!donation || donation.donor.id !== req.user.id) return res.status(404).json({ error: '주문을 찾을 수 없어요.' });
   res.json(donation);
-});
+}));
 
 // 결제사 웹훅 (로그인 없음 — 대신 본문을 믿지 않고 결제사에 재조회해요)
 donationsRouter.post(

@@ -119,28 +119,49 @@
       }
     });
 
+    // 💡 5단계: 서버가 여러 대라, 송출을 받던 서버가 줄어들면(스케일 인) 소켓이 1012 로 닫혀요.
+    //    이때 방송을 끝내지 않고 30초 동안 다시 연결해요 → 다른 서버가 같은 방송을 이어받아요.
+    const RECONNECT_WINDOW_MS = 25_000;
+    let onAirShown = false;
+    let disconnectedAt = 0;
+
     function connect() {
       const { broadcast, streamKey } = live;
       const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${scheme}://${location.host}/ws/ingest?id=${broadcast.id}&key=${streamKey}`);
-      ws.binaryType = 'arraybuffer';
+      const socket = new WebSocket(`${scheme}://${location.host}/ws/ingest?id=${broadcast.id}&key=${streamKey}`);
+      socket.binaryType = 'arraybuffer';
+      ws = socket;
 
-      ws.onopen = () => {
-        recorder = new MediaRecorder(stream, { mimeType: pickMime(), videoBitsPerSecond: 2_500_000 });
-        // 1초마다 조각을 만들어 바로 서버로 보내요
-        recorder.ondataavailable = (ev) => {
-          if (ev.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(ev.data);
+      socket.onopen = () => {
+        disconnectedAt = 0;
+        // 연결마다 새 녹화기 → 새 연결의 첫 조각에 영상 헤더가 들어가서 서버가 바로 해석할 수 있어요
+        const rec = new MediaRecorder(stream, { mimeType: pickMime(), videoBitsPerSecond: 2_500_000 });
+        rec.ondataavailable = (ev) => {
+          if (ev.data.size > 0 && socket.readyState === WebSocket.OPEN) socket.send(ev.data); // 1초마다 조각 전송
         };
-        recorder.onstop = () => closeSocketWhenFlushed();
-        recorder.start(1000);
-        onAir(broadcast);
-      };
-      ws.onclose = () => {
-        if (!ending) {
-          say('서버와 연결이 끊겨 방송이 종료됐어요.', true);
-          recorder?.state === 'recording' && recorder.stop();
+        rec.start(1000);
+        recorder = rec;
+        if (!onAirShown) {
+          onAirShown = true;
+          onAir(broadcast);
+        } else {
+          say('다른 서버로 다시 연결됐어요. 방송이 이어져요. 🔁');
         }
-        offAir();
+      };
+      socket.onclose = async (ev) => {
+        if (ws !== socket) return; // 이미 새 연결로 바뀐 옛 소켓
+        if (ending) return offAir();
+        if (recorder?.state === 'recording') recorder.stop();
+
+        disconnectedAt ||= Date.now();
+        const stillLive = await api(`/broadcasts/${broadcast.id}`).then((b) => b.status === 'live').catch(() => true);
+        if (stillLive && Date.now() - disconnectedAt < RECONNECT_WINDOW_MS) {
+          say(`서버 연결이 끊겼어요 (code ${ev.code}). 다시 연결하는 중…`, true);
+          setTimeout(connect, 1000);
+        } else {
+          say('서버와 연결이 끊겨 방송이 종료됐어요.', true);
+          offAir();
+        }
       };
     }
 
@@ -185,7 +206,8 @@
       ending = true;
       $('stop').disabled = true;
       say('방송을 종료하고 있어요…');
-      recorder.stop(); // → 마지막 dataavailable → onstop → 소켓 닫기
+      recorder.onstop = () => closeSocketWhenFlushed();
+      recorder.stop(); // → 마지막 dataavailable → onstop → 소켓 닫기(1000) → 서버가 "종료" 처리
       await new Promise((r) => ws.addEventListener('close', r, { once: true }));
       // 소켓 종료로 서버가 이미 처리하지만, 확실하게 한 번 더 알려요 (서버가 쿠키로 소유자인지 검사)
       await send('POST', `/lives/${live.broadcast.id}/end`).catch(() => {});

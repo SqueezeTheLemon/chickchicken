@@ -24,9 +24,13 @@ export const sessionTokenFrom = (cookieHeader) => parseCookies(cookieHeader)[con
 export const userFromCookieHeader = (cookieHeader) => sessionRepo.findUser(sessionTokenFrom(cookieHeader));
 
 /** 모든 요청: 로그인 상태면 req.user 를 채워요 (비로그인이면 undefined, 막지는 않음) */
-export function loadUser(req, _res, next) {
-  req.user = userFromCookieHeader(req.headers.cookie);
-  next();
+export async function loadUser(req, _res, next) {
+  try {
+    req.user = await userFromCookieHeader(req.headers.cookie);
+    next();
+  } catch (e) {
+    next(e);
+  }
 }
 
 /** 로그인 필수 → 아니면 401 */
@@ -40,13 +44,17 @@ export function requireAuth(req, res, next) {
  * 💡 순서가 중요해요: 없으면 404 → 로그인 안 했으면 401 → 남의 방송이면 403
  *    (requireAuth 뒤에 붙여서 쓰세요)
  */
-export function requireBroadcastOwner(req, res, next) {
-  const id = Number(req.params.id);
-  const broadcast = Number.isInteger(id) ? broadcastRepo.findById(id) : undefined;
-  if (!broadcast) return res.status(404).json({ error: '방송을 찾을 수 없어요.' });
-  if (broadcast.owner?.id !== req.user.id) {
-    return res.status(403).json({ error: '방송 소유자만 할 수 있어요.' });
+export async function requireBroadcastOwner(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    const broadcast = Number.isInteger(id) ? await broadcastRepo.findById(id) : undefined;
+    if (!broadcast) return res.status(404).json({ error: '방송을 찾을 수 없어요.' });
+    if (broadcast.owner?.id !== req.user.id) {
+      return res.status(403).json({ error: '방송 소유자만 할 수 있어요.' });
+    }
+    req.broadcast = broadcast;
+    next();
+  } catch (e) {
+    next(e);
   }
-  req.broadcast = broadcast;
-  next();
 }

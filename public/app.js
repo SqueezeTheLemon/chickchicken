@@ -15,8 +15,8 @@ export const send = (method, path, body) =>
     body: body ? JSON.stringify(body) : undefined,
   });
 
-// SQLite datetime('now')는 UTC라서 'Z'를 붙여 로컬 시간으로 보여줘요
-export const formatDate = (s) => new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('ko-KR');
+// 서버는 ISO 시각(UTC, 'Z')으로 보내요 → 브라우저 시간대로 보여줘요
+export const formatDate = (s) => new Date(s).toLocaleString('ko-KR');
 
 export const formatSize = (bytes) =>
   bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;

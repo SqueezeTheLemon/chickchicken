@@ -1,0 +1,21 @@
+# 로컬 개발용: PostgreSQL 만 띄워요 (앱은 npm start 로 직접 실행)
+#   docker compose up -d db
+# 클러스터(여러 인스턴스 + 오토스케일)는 k8s/ 와 scripts/cluster-up.sh 를 보세요.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: chickchicken
+      POSTGRES_DB: chickchicken
+      # 로컬 개발 전용 기본값. 실제 비밀번호는 .env 의 POSTGRES_PASSWORD 로 바꿔 쓰세요.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+    ports:
+      - "5433:5432"   # 이미 로컬 Postgres 가 5432 를 쓰는 경우가 많아 5433 으로 노출
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "chickchicken"]
+      interval: 2s
+      retries: 20
+volumes:
+  dbdata:

@@ -1,7 +1,7 @@
 {
   "name": "chickchicken",
   "version": "0.1.0",
-  "description": "치지직 클론 ① 인증·인가 없는 녹화방송 (VOD)",
+  "description": "치지직 클론 — VOD·라이브·인증·댓글·도네이션, 다중 인스턴스 + 오토스케일",
   "private": true,
   "type": "module",
   "main": "src/server.js",
@@ -12,11 +12,19 @@
     "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning src/server.js",
     "dev": "node --watch --env-file-if-exists=.env --no-warnings=ExperimentalWarning src/server.js",
     "verify:auth": "node --no-warnings scripts/verify-auth.mjs",
-    "verify:donations": "node --no-warnings scripts/verify-donations.mjs"
+    "verify:donations": "node --no-warnings scripts/verify-donations.mjs",
+    "db:up": "docker compose up -d db",
+    "cluster:up": "./scripts/cluster-up.sh",
+    "cluster:down": "./scripts/cluster-down.sh",
+    "load": "node scripts/load.mjs",
+    "check:continuity": "node scripts/check-continuity.mjs",
+    "watch:scale": "./scripts/watch-scale.sh",
+    "verify:live-handover": "node --no-warnings scripts/verify-live-handover.mjs"
   },
   "dependencies": {
     "express": "^4.22.3",
     "multer": "^2.5.0",
+    "pg": "^8.23.1",
     "ws": "^8.23.0"
   }
 }

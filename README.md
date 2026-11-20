@@ -5,13 +5,15 @@
 | ① | 인증·인가 없는 녹화방송 (VOD 등록·목록·상세·재생) |
 | ② | 휴대폰 라이브 송출·시청, 방송 중·종료 상태 표시 |
 | ③ | 회원가입·로그인·로그아웃, 방송 소유자 권한 검사, 댓글 |
-| **④ (현재)** | **방송자 후원(도네이션): 토스페이먼츠 테스트 결제, 서버 승인 확인, 중복 통지 방지, 방송별 내역·합계** |
+| ④ | 방송자 후원(도네이션): 토스페이먼츠 테스트 결제, 서버 승인 확인, 중복 통지 방지, 방송별 내역·합계 |
+| **⑤ (현재)** | **컨테이너 이미지, 로컬 쿠버네티스(kind)에서 여러 인스턴스 + HPA 자동 스케일, 상태를 공용 저장소(PostgreSQL·공유 볼륨)로** |
 
 ## 기술 스택
 
 - **Node.js 22.13+** / Express 4
 - **multer**: 녹화 영상 업로드
-- **node:sqlite** (Node 내장 SQLite): 사용자·세션·방송·댓글 영속화, 별도 DB 설치 불필요
+- **PostgreSQL 17** (`pg`): 사용자·세션·방송·댓글·후원·라이브 진행 상태를 담는 **공용 DB**. ④단계까지는 SQLite였고, 여러 인스턴스가 같이 쓰도록 ⑤단계에서 바꿨어요.
+- **Docker** 이미지 + **kind**(로컬 쿠버네티스) + **HPA**(metrics-server CPU 지표)
 - **ws** (WebSocket): 휴대폰 → 서버 라이브 영상 전송
 - **ffmpeg**: 받은 영상을 **HLS**(`.m3u8` + `.ts`)로 변환
 - **인증**: 서버 세션 + `HttpOnly` 쿠키, 비밀번호는 Node 내장 `crypto.scrypt` 해시 (추가 라이브러리 없음)
@@ -24,21 +26,41 @@
 
 - Node.js **22.13 이상**
 - **ffmpeg**: macOS `brew install ffmpeg` / Ubuntu `sudo apt install ffmpeg`. `ffmpeg -version`으로 확인하세요.
+- **Docker** (Docker Desktop): PostgreSQL 컨테이너용. 클러스터 실행에도 필요해요.
+
+### A. 개발용: 인스턴스 1개
 
 ```bash
 npm install
 cp .env.example .env   # 필요하면 값 수정 (없어도 기본값으로 동작)
+npm run db:up          # PostgreSQL 컨테이너 (localhost:5433)
 npm start              # http://localhost:3000
 ```
 
 개발 중에는 `npm run dev`로 실행하면 파일이 바뀔 때마다 서버가 자동 재시작돼요.
+
+### B. 로컬 쿠버네티스: 여러 인스턴스 + 오토스케일 (⑤단계)
+
+준비물: Docker Desktop, `kind`(`brew install kind`), `kubectl`
+
+```bash
+npm run cluster:up     # kind 클러스터 + metrics-server + 이미지 빌드·적재 + Postgres·앱·HPA 배포
+# → http://localhost:8080  (Service 가 여러 Pod 로 나눠 보내요)
+npm run cluster:down   # 클러스터 삭제
+```
+
+자세한 구조와 확인 절차는 아래 "⑤ 여러 인스턴스 + 오토스케일"을 보세요.
 
 ## 환경변수
 
 | 이름 | 기본값 | 설명 |
 | --- | --- | --- |
 | `PORT` | `3000` | 서버 포트 |
-| `DATA_DIR` | `./data` | SQLite DB(`chickchicken.db`), 업로드 영상(`videos/`), 라이브 HLS(`live/{id}/`) 저장 폴더 |
+| `DATABASE_URL` | `postgres://chickchicken:devpassword@localhost:5433/chickchicken` | 공용 PostgreSQL 주소. 클러스터에서는 Secret의 랜덤 비밀번호로 만들어요 |
+| `POSTGRES_PASSWORD` | `devpassword` | `docker compose`로 띄우는 **로컬 개발용** DB 비밀번호 (실제 비밀 값 아님) |
+| `DB_POOL_MAX` | `10` | 인스턴스당 DB 연결 수 |
+| `INSTANCE_ID` | 호스트 이름 | 인스턴스 이름. 응답 헤더 `X-Instance`와 라이브 송출 담당 기록에 써요. 쿠버네티스에선 Pod 이름 |
+| `DATA_DIR` | `./data` | 업로드 영상(`videos/`), 라이브 HLS(`live/{id}/`) 저장 폴더. 여러 인스턴스면 **공유 볼륨** |
 | `MAX_UPLOAD_MB` | `500` | 업로드 최대 크기(MB) |
 | `FFMPEG_PATH` | `ffmpeg` | ffmpeg 실행 파일 경로 |
 | `HLS_SEGMENT_SECONDS` | `2` | HLS 조각 길이(초) |
@@ -68,9 +90,9 @@ npm start              # http://localhost:3000
 - **시청**: 목록에서 `● LIVE` 카드를 선택하면 HLS로 실시간 시청해요(약 5~10초 지연). 방송이 끝나면 종료가 표시돼요.
 - **상태 구분**: `● LIVE`(방송 중), `종료된 라이브`, `다시보기`(업로드 영상). 방송 중인 라이브가 목록 맨 위에 와요.
 - 종료된 라이브는 다시보기로 재생돼요.
-- 연결 끊김, 30초 안에 송출 미시작, 서버 재시작 시 자동으로 종료 처리해요.
+- 송출 연결이 끊기면 **30초 동안 재연결을 기다렸다가**(⑤단계부터, 다른 인스턴스로 이어받기) 그래도 없으면 종료 처리해요. 30초 안에 송출이 시작되지 않은 방송도 종료해요.
 
-### ③ 인증·인가 + 댓글 (이번 단계)
+### ③ 인증·인가 + 댓글 (유지)
 
 - **회원가입·로그인·로그아웃** (`/signup`, `/login`, 헤더의 로그아웃 버튼)
   - 아이디: 영문·숫자·_ 3~20자, 대소문자 구분 없이 유일
@@ -96,7 +118,7 @@ npm start              # http://localhost:3000
   - 방송 소유자가 쓴 댓글에는 `방송인` 배지가 붙어요.
   - 방송을 삭제하면 댓글도 함께 지워져요(`ON DELETE CASCADE`).
 
-### ④ 도네이션 (이번 단계)
+### ④ 도네이션 (유지)
 
 - **방송자와 금액 선택**
   - 방송 상세 화면 오른쪽의 💰 후원 패널에서 금액(1,000·5,000·10,000·50,000원 또는 직접 입력)과 메시지를 고르고 **후원하기**를 눌러요.
@@ -125,8 +147,74 @@ npm start              # http://localhost:3000
 - **방송별 후원 내역·합계**: 상세 화면 후원 패널에 **확정(DONE)된 후원만** 합계·건수·최근 내역(후원자, 금액, 메시지, 시각)으로 보여요. 5초마다 갱신돼요.
 - 방송을 삭제해도 후원 기록은 남아요(`broadcast_id`만 NULL, 방송 제목은 스냅샷으로 저장).
 
+### ⑤ 여러 인스턴스 + 오토스케일 (이번 단계)
+
+```
+                        localhost:8080
+                              │  (kind extraPortMappings → NodePort 30080)
+                     ┌────────▼────────┐
+                     │ Service (L4)    │  kube-proxy 가 연결 단위로 Pod 에 분산
+                     └──┬─────┬─────┬──┘
+           ┌────────────┘     │     └────────────┐
+     ┌─────▼─────┐      ┌─────▼─────┐      ┌─────▼─────┐
+     │ Pod (app) │      │ Pod (app) │  …   │ Pod (app) │   ← HPA 가 CPU 50% 기준으로 2~6개 조절
+     └─────┬─────┘      └─────┬─────┘      └─────┬─────┘
+           │  상태는 Pod 안에 두지 않아요         │
+     ┌─────▼──────────────────▼──────────────────▼─────┐
+     │ PostgreSQL (Deployment + PVC)                    │  사용자·세션·방송·댓글·후원·라이브 진행 상태
+     │ 공유 볼륨 media (PVC, 모든 Pod 가 /data 에 마운트) │  업로드 영상 · 라이브 HLS 조각
+     └──────────────────────────────────────────────────┘
+```
+
+- **컨테이너 이미지** ([Dockerfile](Dockerfile)): `node:22-alpine` + `ffmpeg`, 비밀 값 없음. 설정은 실행 환경(Secret·Env)에서 넣어요.
+- **오케스트레이터**: kind(로컬 쿠버네티스, 노드 1개). [k8s/](k8s/)의 매니페스트와 [scripts/cluster-up.sh](scripts/cluster-up.sh) 한 번으로 아래를 모두 해요.
+  - 클러스터 생성, metrics-server 설치
+  - 이미지 빌드 후 `kind load`로 클러스터에 넣기
+  - Secret 생성(DB 비밀번호는 **랜덤으로 생성**하고 저장소에 남기지 않아요)
+  - Postgres·앱·HPA 배포
+- **부하 분산**: NodePort Service. 응답마다 `X-Instance: <Pod 이름>` 헤더가 붙어서 어느 Pod가 처리했는지 보여요.
+- **자동 스케일** ([k8s/hpa.yaml](k8s/hpa.yaml)): HPA `autoscaling/v2`
+  - 기준: CPU 사용률 평균 **50%**(Pod 요청량 200m 대비)
+  - 범위: **최소 2 ~ 최대 6**
+  - 늘릴 때: 바로, 15초마다 최대 2배
+  - 줄일 때: 1분 안정화 후 30초마다 2개씩. 쿠버네티스 기본값은 5분인데, 확인하기 쉽게 줄였어요.
+- **헬스체크와 우아한 종료**
+  - `readinessProbe /readyz`: DB 연결을 확인하고, 종료 중이면 503을 돌려줘요. 준비된 Pod에만 요청이 가요.
+  - `livenessProbe /healthz`
+  - `preStop sleep 5`로 Service에서 빠질 시간을 준 뒤 SIGTERM을 받아요. 처리 중인 요청을 마치고, DB 연결을 닫고 종료해요.
+- **상태를 인스턴스 밖으로** (Pod가 늘거나 줄어도 그대로 유지)
+
+  | 상태 | ④단계까지 | ⑤단계 |
+  | --- | --- | --- |
+  | 사용자·로그인 세션 | SQLite 파일 | **PostgreSQL** `sessions` (토큰 해시). 어느 Pod로 가도 같은 로그인 상태라 sticky session이 필요 없어요 |
+  | 방송·댓글·후원 | SQLite 파일 | **PostgreSQL** |
+  | 업로드 영상·라이브 HLS | 로컬 폴더 | **공유 볼륨**(PVC `media`), 모든 Pod가 `/data`에 마운트 |
+  | 라이브 송출 담당·종료 요청 | 메모리(`Map`) | **PostgreSQL** `broadcasts.live_instance_id`, `live_heartbeat_at`, `end_requested_at`, `stream_key_hash` |
+  | 모의 결제사 결제 정보 | 메모리 | **PostgreSQL** `mock_payments` |
+  | 후원 주문 처리 잠금 | 메모리 잠금 | **Postgres advisory lock** (모든 Pod에 걸쳐 같은 주문을 한 줄로) |
+  | DB 스키마 생성 | 시작 시 | 시작 시 + advisory lock (여러 Pod가 동시에 떠도 한 번씩) |
+
+- **라이브 송출과 스케일** (어려운 부분)
+  - 송출 WebSocket은 **아무 Pod에나** 붙을 수 있어요. 받은 Pod가 DB에 "내가 맡음(claim)"을 기록하고 3초마다 하트비트를 남겨요.
+  - 다른 Pod가 같은 방송에 송출을 받으려 하면 403이에요.
+  - **종료 요청이 다른 Pod로 가도** DB에 `end_requested_at`을 남기면, 송출을 맡은 Pod가 하트비트 때 보고 종료해요(약 1~3초).
+  - **스케일 인으로 송출 중인 Pod가 내려가면** 방송을 끝내지 않아요.
+    - 소켓을 `1012`(service restart)로 닫고 claim을 놓아요.
+    - 휴대폰 송출 페이지가 **자동으로 재연결**하면 다른 Pod가 이어받아요.
+    - ffmpeg `append_list`로 **같은 재생목록에 이어 붙이고**, 끊긴 자리에 `#EXT-X-DISCONTINUITY`를 넣어요.
+  - 하트비트가 30초 넘게 끊긴 라이브(재연결 없음, Pod 강제 종료 등)는 **어느 Pod든** 정리해요(reaper).
+- **부하 발생** ([scripts/load.mjs](scripts/load.mjs)): 외부 도구 없이 Node만으로 동시 N개 작업자가 요청을 보내요.
+  - 요청 구성: 방송 목록 60%, 댓글 20%, 로그인 20%(비밀번호 해시라 CPU를 씀)
+  - 요청마다 새 연결로 보내서 Pod에 고르게 나뉘어요.
+  - 5초마다 처리량, p95 지연, Pod별 처리 수를 출력해요.
+- **상태 유지 확인** ([scripts/check-continuity.mjs](scripts/check-continuity.mjs)): 스케일 중에 3초마다 **새 연결**로 아래를 확인해요. 처음 보는 Pod가 응답하면 🆕로 표시해요.
+  - 로그인 상태
+  - 방송 목록, 댓글 수, 후원 합계
+  - 업로드 영상(공유 볼륨) 응답
+
 ### 이번 단계에서 하지 않은 것
 
+- 클라우드 배포, 노드 여러 대(그 경우 공유 볼륨을 RWX(NFS 등)나 오브젝트 스토리지로 바꿔야 해요), DB 이중화
 - 실제 금전 결제(테스트 키만 허용), 방송자 정산·출금, 부분 환불 UI
 - 웹훅 서명(`tosspayments-webhook-signature`) 검증: 대신 **결제사 재조회**로 본문을 검증해요.
 - 비밀번호 변경·탈퇴, 로그인 시도 횟수 제한(rate limit)
@@ -241,6 +329,90 @@ npm start   # 콘솔에 표시되는 "LAN → https://192.168.x.x:3000" 주소�
 - **시청**: PC Chrome·Edge·Firefox는 hls.js로, Safari와 iOS는 기본 HLS로 재생해요.
 
 ## 직접 확인 절차
+
+### ⑤ 여러 인스턴스 + 오토스케일
+
+터미널 3개를 열어요.
+
+```bash
+npm run cluster:up                                   # 0) 클러스터 띄우기 (처음 한 번, 몇 분 걸려요)
+./scripts/watch-scale.sh docs/scaling-log.txt        # 1) 터미널 A: Pod 수·CPU 를 5초마다 기록
+node scripts/check-continuity.mjs --duration 450     # 2) 터미널 B: 스케일 중 로그인·방송·댓글·후원·영상 유지 확인
+node scripts/load.mjs --duration 180 --concurrency 60  # 3) 터미널 C: 3분 부하
+```
+
+- 부하가 시작되면 터미널 A에서 **희망Pod / 현재Pod 가 2 → 4 → 6**으로 늘어나요.
+- 부하가 끝나고 약 1분 뒤에는 **6 → 4 → 2**로 줄어요.
+- `kubectl -n chickchicken get hpa -w`나 `kubectl -n chickchicken describe hpa chickchicken`의 Events로도 볼 수 있어요.
+- 터미널 B는 스케일이 바뀌는 내내 ✔만 나와야 해요. 새로 생긴 Pod가 처음 응답하면 🆕가 붙어요.
+- 화면으로 확인하려면 브라우저 두 개로 `http://localhost:8080`에 로그인하고 방송·댓글을 남긴 채 부하를 걸어요. 새로고침할 때마다 다른 Pod가 응답해도(개발자 도구 → 응답 헤더 `X-Instance`) 로그인과 방송 목록·댓글이 그대로예요.
+- 기존 점검 스크립트를 **클러스터 주소로** 그대로 돌릴 수도 있어요. 이번 확인에서 `54/54`, `36/36`이 모두 통과했어요.
+
+  ```bash
+  BASE_URL=http://localhost:8080 npm run verify:auth
+  BASE_URL=http://localhost:8080 npm run verify:donations
+  ```
+
+- **라이브 송출 인계**(스케일 인 때 송출 중인 인스턴스가 내려가는 상황): 로컬에서 인스턴스 3개를 띄워 12개 항목을 확인해요(모두 통과).
+
+  ```bash
+  npm run db:up && npm run verify:live-handover
+  ```
+
+#### 실제로 확인한 결과 (2026-11-20, MacBook Docker Desktop 8 CPU, kind 1노드)
+
+전체 기록은 [docs/scaling-log.txt](docs/scaling-log.txt), [docs/load-log.txt](docs/load-log.txt), [docs/continuity-log.txt](docs/continuity-log.txt), [docs/hpa-events.txt](docs/hpa-events.txt)에 있어요.
+
+**인스턴스 수 변화** (`watch-scale.sh` 출력 일부, CPU는 요청량 200m 대비 평균 사용률)
+
+```
+시각      CPU(현재/목표) 희망Pod 현재Pod Ready
+22:18:20  2/50%          2       2       2      ← 부하 전
+22:18:26  373/50%        4       2       2      ← 부하 시작 → 4개로
+22:18:41  495/50%        6       4       4      ← 아직 높음 → 6개(최대)로
+22:18:57  444/50%        6       6       6
+  … (부하 3분 동안 6개 유지, CPU 220~300%)
+22:21:28  68/50%         6       6       6      ← 부하 종료
+22:22:24  1/50%          6       6       6      ← 1분 안정화 대기
+22:22:30  1/50%          4       6       4      ← 스케일 인 6 → 4
+22:23:00  1/50%          2       4       2      ← 스케일 인 4 → 2 (최소)
+22:23:16  1/50%          2       2       2
+```
+
+**HPA 이벤트** (`kubectl describe hpa`)
+
+```
+Normal  SuccessfulRescale  New size: 4; reason: cpu resource utilization (percentage of request) above target
+Normal  SuccessfulRescale  New size: 6; reason: cpu resource utilization (percentage of request) above target
+Normal  SuccessfulRescale  New size: 4; reason: All metrics below target
+Normal  SuccessfulRescale  New size: 2; reason: All metrics below target
+```
+
+**부하 분산** (`load.mjs`, 5초 구간별 Pod당 처리 수)
+
+```
+22:18:24   162 req/s  p95 2222ms  Pod 2개 → 828k5:409 nrlbb:401
+22:18:34   326 req/s  p95 1911ms  Pod 4개 → 828k5:404 lxvwv:407 nrlbb:378 zkq88:439
+22:18:54   340 req/s  p95 1023ms  Pod 6개 → 828k5:272 lxvwv:268 ndr2f:298 nrlbb:300 t2xz4:269 zkq88:294
+✅ 끝: 성공 44073 · 실패 1 · 응답한 Pod 6개
+```
+
+- Pod가 늘어나면서 p95 지연이 약 2.2초에서 약 1.1초로 줄었어요.
+- 실패 1건(0.002%)은 스케일 아웃 중(22:18:44)에 발생했어요. 이유는 확인하지 못했어요.
+
+**스케일 중 상태 유지** (`check-continuity.mjs`): 새로 생긴 Pod 4개도 첫 응답부터 같은 상태를 봤어요.
+
+```
+시각      Pod         로그인  방송목록  댓글  후원합계  영상
+22:17:44  8967-828k5 🆕  ✔       ✔         ✔     ✔        ✔
+22:18:29  8967-lxvwv 🆕  ✔       ✔         ✔     ✔        ✔     ← 스케일 아웃으로 생긴 Pod
+22:18:37  8967-zkq88 🆕  ✔       ✔         ✔     ✔        ✔
+22:18:47  8967-t2xz4 🆕  ✔       ✔         ✔     ✔        ✔
+22:19:33  8967-ndr2f 🆕  ✔       ✔         ✔     ✔        ✔
+22:22:35  8967-t2xz4     ✔       ✔         ✔     ✔        ✔     ← 스케일 인 중
+22:23:02  8967-828k5     ✔       ✔         ✔     ✔        ✔
+✅ 확인 130회 · 실패 0회 · 응답한 Pod 6개
+```
 
 ### ④ 도네이션 — 토스페이먼츠 테스트 결제 (실제 결제 서비스 샌드박스)
 
@@ -366,7 +538,7 @@ src/
   server.js              진입점: HTTP/HTTPS 서버, WebSocket 연결, 종료 처리, 만료 세션 정리
   app.js                 Express 앱 조립 (loadUser → 라우터), 정적 파일, 에러 처리
   config.js              환경변수 → 설정
-  db.js                  SQLite 스키마·마이그레이션 + broadcastRepo
+  db.js                  PostgreSQL 연결 풀·스키마·advisory lock + broadcastRepo(라이브 claim·하트비트 포함)
   asyncHandler.js        async 라우트 에러 전달
   auth/passwords.js      scrypt 해시·검증
   auth/middleware.js     쿠키 → req.user, requireAuth(401), requireBroadcastOwner(403)
@@ -380,7 +552,7 @@ src/
   payments/              결제 게이트웨이: tossGateway(테스트 모드) · mockGateway(모의) · mockRoutes(모의 결제창)
   repos/donationRepo.js  후원 주문 저장·상태 전이·방송별 합계
   live/liveService.js    라이브 세션 관리, ffmpeg → HLS 변환
-  live/ingest.js         송출 WebSocket 수신 (쿠키·소유자·streamKey 검사), 하트비트
+  live/ingest.js         송출 WebSocket 수신 (쿠키·소유자·streamKey·DB claim 검사), 하트비트
 public/
   index.html             방송 목록
   watch.html             상세·재생, 소유자 제어, 댓글
@@ -394,4 +566,19 @@ public/
 scripts/
   verify-auth.mjs        권한 매트릭스 자동 점검 (npm run verify:auth)
   verify-donations.mjs   도네이션 성공·실패·취소·위변조·중복 통지 점검 (npm run verify:donations)
+  cluster-up.sh          kind 클러스터 + metrics-server + 이미지 + 배포 (npm run cluster:up)
+  cluster-down.sh        클러스터 삭제
+  load.mjs               부하 발생 (npm run load -- --duration 180 --concurrency 60)
+  watch-scale.sh         HPA·Pod 수 변화 5초마다 기록
+  check-continuity.mjs   스케일 중 로그인·방송·댓글·후원·영상 유지 확인
+  verify-live-handover.mjs  인스턴스 3개로 라이브 송출 인계 점검 (npm run verify:live-handover)
+k8s/
+  kind-config.yaml       kind 클러스터 (localhost:8080 → NodePort 30080)
+  namespace.yaml, postgres.yaml, app.yaml(공유 볼륨·Deployment·Service), hpa.yaml
+docs/
+  scaling-log.txt        실제 실험의 인스턴스 수 변화 기록
+  hpa-events.txt         HPA 스케일 이벤트
+  load-log.txt           부하 실행 출력
+  continuity-log.txt     스케일 중 상태 유지 확인 출력
+Dockerfile, .dockerignore, docker-compose.yml(개발용 Postgres)
 ```

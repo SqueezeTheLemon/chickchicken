@@ -1,0 +1,12 @@
+# 로컬 쿠버네티스 클러스터 (kind)
+#   kind create cluster --name chickchicken --config k8s/kind-config.yaml
+# 노드 1개 → 공유 볼륨(PVC, ReadWriteOnce)을 모든 Pod 가 같이 마운트할 수 있어요.
+# 호스트 8080 → 노드 30080(NodePort) → Service 가 여러 Pod 로 나눠 보내요.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP

@@ -1,0 +1,102 @@
+# chickchicken 서버: 여러 Pod 로 실행 + Service 로 요청 분산
+---
+# 공유 볼륨: 업로드 영상(videos/)과 라이브 HLS(live/{id}/) — 모든 Pod 가 같은 폴더를 봐요
+# kind 는 노드 1개라 ReadWriteOnce 볼륨을 모든 Pod 가 함께 마운트할 수 있어요.
+# (노드가 여러 개인 클러스터라면 ReadWriteMany(NFS 등)나 오브젝트 스토리지로 바꿔야 해요)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media
+  namespace: chickchicken
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chickchicken
+  namespace: chickchicken
+  labels: { app: chickchicken }
+spec:
+  replicas: 2 # 시작 개수 (이후엔 HPA 가 2~6 사이에서 조절)
+  selector:
+    matchLabels: { app: chickchicken }
+  template:
+    metadata:
+      labels: { app: chickchicken }
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 1000 # node 사용자(1000)가 공유 볼륨에 쓸 수 있게
+      initContainers:
+        # local-path 볼륨 권한 보정 (처음 한 번)
+        - name: fix-perms
+          image: chickchicken:local
+          imagePullPolicy: IfNotPresent
+          securityContext: { runAsUser: 0 }
+          command: [sh, -c, "mkdir -p /data/videos /data/live && chown -R 1000:1000 /data"]
+          volumeMounts:
+            - { name: media, mountPath: /data }
+      containers:
+        - name: app
+          image: chickchicken:local
+          imagePullPolicy: IfNotPresent # kind load 로 넣은 로컬 이미지 사용
+          ports:
+            - containerPort: 3000
+          env:
+            - name: INSTANCE_ID # Pod 이름 → 응답 헤더 X-Instance, 라이브 송출 claim 에 기록
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: chickchicken-db, key: password }
+            - name: DATABASE_URL # $(DB_PASSWORD) 는 위 env 를 쿠버네티스가 치환해요
+              value: postgres://chickchicken:$(DB_PASSWORD)@postgres:5432/chickchicken
+            - { name: DATA_DIR, value: /data }
+            - { name: DB_POOL_MAX, value: "10" } # Pod 6개 × 10 = 60 < Postgres 기본 max_connections 100
+            # 결제: 토스 테스트 키 Secret 이 있으면 toss, 없으면 mock (scripts/cluster-up.sh 참고)
+            - name: TOSS_CLIENT_KEY
+              valueFrom:
+                secretKeyRef: { name: chickchicken-toss, key: clientKey, optional: true }
+            - name: TOSS_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: chickchicken-toss, key: secretKey, optional: true }
+          # 💡 HPA 의 CPU 사용률은 requests 기준이에요 (200m 의 50% = 100m 넘으면 늘려요)
+          resources:
+            requests: { cpu: 200m, memory: 160Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          readinessProbe: # 준비된 Pod 에만 Service 가 요청을 보내요 (종료 중이면 503 → 빠짐)
+            httpGet: { path: /readyz, port: 3000 }
+            periodSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: 3000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop: # Service 에서 빠질 시간을 준 뒤 SIGTERM (요청 유실 방지)
+              exec:
+                command: [sleep, "5"]
+          volumeMounts:
+            - { name: media, mountPath: /data }
+      volumes:
+        - name: media
+          persistentVolumeClaim: { claimName: media }
+---
+# 여러 Pod 앞에서 요청을 나눠 받는 Service (kube-proxy 가 연결 단위로 분산)
+# kind 의 extraPortMappings 로 호스트 localhost:8080 → NodePort 30080
+apiVersion: v1
+kind: Service
+metadata:
+  name: chickchicken
+  namespace: chickchicken
+spec:
+  type: NodePort
+  selector: { app: chickchicken }
+  ports:
+    - port: 80
+      targetPort: 3000
+      nodePort: 30080

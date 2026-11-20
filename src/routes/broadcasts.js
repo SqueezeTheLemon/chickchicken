@@ -41,20 +41,20 @@ function readTitleAndDescription(body) {
 export const broadcastsRouter = Router();
 
 // ---- 공개: 목록·상세 ----
-broadcastsRouter.get('/', (_req, res) => {
-  res.json(broadcastRepo.findAll());
-});
+broadcastsRouter.get('/', asyncHandler(async (_req, res) => {
+  res.json(await broadcastRepo.findAll());
+}));
 
-broadcastsRouter.get('/:id', (req, res) => {
+broadcastsRouter.get('/:id', asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const broadcast = Number.isInteger(id) ? broadcastRepo.findById(id) : undefined;
+  const broadcast = Number.isInteger(id) ? await broadcastRepo.findById(id) : undefined;
   if (!broadcast) return res.status(404).json({ error: '방송을 찾을 수 없어요.' });
   res.json(broadcast);
-});
+}));
 
 // ---- 로그인 필요: 녹화 영상 등록 ----
 // 💡 requireAuth 를 multer 보다 앞에 둬서, 비로그인 요청은 파일을 디스크에 쓰기 전에 거절해요
-broadcastsRouter.post('/', requireAuth, upload.single('video'), (req, res) => {
+broadcastsRouter.post('/', requireAuth, upload.single('video'), asyncHandler(async (req, res) => {
   const fail = (msg) => {
     if (req.file) fs.rmSync(req.file.path, { force: true }); // 고아 파일 정리
     res.status(400).json({ error: msg });
@@ -64,7 +64,7 @@ broadcastsRouter.post('/', requireAuth, upload.single('video'), (req, res) => {
   const input = readTitleAndDescription(req.body);
   if (input.error) return fail(input.error);
 
-  const broadcast = broadcastRepo.create({
+  const broadcast = await broadcastRepo.create({
     ...input,
     videoPath: req.file.filename,
     mimeType: req.file.mimetype,
@@ -72,14 +72,14 @@ broadcastsRouter.post('/', requireAuth, upload.single('video'), (req, res) => {
     ownerId: req.user.id,
   });
   res.status(201).json(broadcast);
-});
+}));
 
 // ---- 소유자만: 수정·삭제 ----
-broadcastsRouter.patch('/:id', express.json({ limit: '10kb' }), requireAuth, requireBroadcastOwner, (req, res) => {
+broadcastsRouter.patch('/:id', express.json({ limit: '10kb' }), requireAuth, requireBroadcastOwner, asyncHandler(async (req, res) => {
   const input = readTitleAndDescription(req.body);
   if (input.error) return res.status(400).json({ error: input.error });
-  res.json(broadcastRepo.update(req.broadcast.id, input));
-});
+  res.json(await broadcastRepo.update(req.broadcast.id, input));
+}));
 
 broadcastsRouter.delete(
   '/:id',
@@ -87,16 +87,17 @@ broadcastsRouter.delete(
   requireBroadcastOwner,
   asyncHandler(async (req, res) => {
     const { id, kind } = req.broadcast;
-    const raw = broadcastRepo.findRawById(id);
+    const raw = await broadcastRepo.findRawById(id);
 
     if (kind === 'live') {
-      await liveService.end(id); // 방송 중이면 송출을 먼저 끝내고(ffmpeg 종료 대기) 파일을 지워요
+      // 방송 중이면 송출을 먼저 끝내고(다른 인스턴스가 맡고 있어도 종료될 때까지 기다림) 파일을 지워요
+      await liveService.end(id);
       fs.rmSync(liveDirOf(id), { recursive: true, force: true });
     } else {
       // basename: DB 값이 이상해도 uploadDir 밖은 절대 지우지 않게
       fs.rmSync(path.join(config.uploadDir, path.basename(raw.video_path)), { force: true });
     }
-    broadcastRepo.delete(id); // 댓글은 ON DELETE CASCADE 로 함께 삭제
+    await broadcastRepo.delete(id); // 댓글은 ON DELETE CASCADE 로 함께 삭제
     res.status(204).end();
   }),
 );

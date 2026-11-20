@@ -1,0 +1,62 @@
+# 공용 DB: 사용자·세션·방송·댓글·후원·라이브 진행 상태
+# 비밀번호는 Secret(chickchicken-db) 에서 읽어요. scripts/cluster-up.sh 가 랜덤 값으로 만들어요 (저장소에 비밀 값 X)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: chickchicken
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: chickchicken
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # DB 는 한 번에 하나만 (같은 데이터 폴더를 두 개가 쓰면 안 돼요)
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - { name: POSTGRES_USER, value: chickchicken }
+            - { name: POSTGRES_DB, value: chickchicken }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: chickchicken-db, key: password }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, chickchicken]
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: postgres-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: chickchicken
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432

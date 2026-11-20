@@ -3,6 +3,7 @@ import express from 'express';
 import multer from 'multer';
 import { loadUser } from './auth/middleware.js';
 import { config } from './config.js';
+import { pool } from './db.js';
 import { authRouter } from './routes/auth.js';
 import { broadcastsRouter } from './routes/broadcasts.js';
 import { commentsRouter } from './routes/comments.js';
@@ -11,9 +12,29 @@ import { paymentGateway } from './payments/index.js';
 import { mockPayRouter } from './payments/mockRoutes.js';
 import { livesRouter } from './routes/lives.js';
 
-export function createApp() {
+export function createApp(state = { draining: false }) {
   const app = express();
   const publicDir = path.resolve('public');
+
+  // 5단계: 어느 인스턴스가 응답했는지 보이게 (부하 분산 확인용)
+  app.use((_req, res, next) => {
+    res.setHeader('X-Instance', config.instanceId);
+    next();
+  });
+
+  // 5단계: 쿠버네티스 헬스체크
+  //   /healthz: 프로세스가 살아 있는지 (liveness)  /readyz: DB 연결 OK + 종료 중 아님 → 트래픽 받아도 됨 (readiness)
+  app.get('/healthz', (_req, res) => res.json({ ok: true, instance: config.instanceId }));
+  app.get('/readyz', async (_req, res) => {
+    if (state.draining) return res.status(503).json({ ok: false, reason: 'draining' });
+    try {
+      await pool.query('SELECT 1');
+      res.json({ ok: true, instance: config.instanceId });
+    } catch {
+      res.status(503).json({ ok: false, reason: 'db' });
+    }
+  });
+  app.get('/api/instance', (_req, res) => res.json({ instance: config.instanceId }));
 
   // 💡 모든 API 요청에서 쿠키 → req.user (비로그인이면 undefined). 막는 건 각 라우트의 requireAuth 몫
   app.use('/api', loadUser);

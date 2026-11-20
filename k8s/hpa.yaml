@@ -1,0 +1,30 @@
+# 자동 스케일링: CPU 사용률(요청 대비 평균 50%)을 기준으로 2~6 개 사이에서 늘리고 줄여요
+# 지표는 metrics-server 가 모아요 (scripts/cluster-up.sh 가 설치)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: chickchicken
+  namespace: chickchicken
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: chickchicken
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # 부하가 오면 바로
+      policies:
+        - { type: Percent, value: 100, periodSeconds: 15 } # 15초마다 최대 2배
+    scaleDown:
+      stabilizationWindowSeconds: 60 # 기본 5분 → 확인이 쉽도록 1분 (실서비스는 더 길게)
+      policies:
+        - { type: Pods, value: 2, periodSeconds: 30 } # 30초마다 최대 2개씩 줄이기

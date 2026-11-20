@@ -1,5 +1,6 @@
 import path from 'node:path';
 import express, { Router } from 'express';
+import { asyncHandler } from '../asyncHandler.js';
 import { paymentGateway } from './index.js';
 
 /**
@@ -16,7 +17,7 @@ mockPayRouter.get('/mock-pay', (_req, res) => {
   res.sendFile(path.resolve('src/payments/mock-pay.html'));
 });
 
-mockPayRouter.post('/mock-pay/api/authorize', express.json({ limit: '10kb' }), (req, res) => {
+mockPayRouter.post('/mock-pay/api/authorize', express.json({ limit: '10kb' }), asyncHandler(async (req, res) => {
   const { orderId, orderName, amount, metadata, successUrl, failUrl, outcome } = req.body ?? {};
   if (!isLocalPath(successUrl) || !isLocalPath(failUrl)) return res.status(400).json({ error: 'successUrl/failUrl 은 같은 사이트 경로여야 해요.' });
   if (!orderId || !Number.isInteger(amount) || amount <= 0) return res.status(400).json({ error: '주문 정보가 올바르지 않아요.' });
@@ -29,7 +30,7 @@ mockPayRouter.post('/mock-pay/api/authorize', express.json({ limit: '10kb' }), (
     return res.json({ redirect: withQuery(failUrl, { code: 'REJECT_CARD_COMPANY', message: '카드사에서 결제를 거절했어요.(모의)', orderId }) });
   }
   try {
-    const paymentKey = paymentGateway.authorize({
+    const paymentKey = await paymentGateway.authorize({
       orderId,
       orderName,
       amount,
@@ -40,4 +41,4 @@ mockPayRouter.post('/mock-pay/api/authorize', express.json({ limit: '10kb' }), (
   } catch (e) {
     res.json({ redirect: withQuery(failUrl, { code: e.code ?? 'MOCK_ERROR', message: e.message, orderId }) });
   }
-});
+}));

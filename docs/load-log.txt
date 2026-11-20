@@ -1,0 +1,40 @@
+🔥 부하 시작: http://localhost:8080  동시 60  180초
+22:18:09   161 req/s  err 0  p95 1426ms  Pod 2개 → 828k5:418 nrlbb:386
+22:18:14   121 req/s  err 0  p95 1991ms  Pod 2개 → 828k5:284 nrlbb:319
+22:18:19   138 req/s  err 0  p95 2006ms  Pod 2개 → 828k5:344 nrlbb:348
+22:18:24   162 req/s  err 0  p95 2222ms  Pod 2개 → 828k5:409 nrlbb:401
+22:18:29   173 req/s  err 0  p95 2097ms  Pod 4개 → 828k5:428 lxvwv:25 nrlbb:380 zkq88:32
+22:18:34   326 req/s  err 0  p95 1911ms  Pod 4개 → 828k5:404 lxvwv:407 nrlbb:378 zkq88:439
+22:18:39   277 req/s  err 0  p95 1866ms  Pod 4개 → 828k5:367 lxvwv:347 nrlbb:355 zkq88:317
+22:18:44   212 req/s  err 1  p95 1536ms  Pod 4개 → 828k5:280 lxvwv:265 nrlbb:246 zkq88:268
+22:18:49   283 req/s  err 0  p95 1093ms  Pod 6개 → 828k5:276 lxvwv:255 ndr2f:181 nrlbb:242 t2xz4:207 zkq88:253
+22:18:54   340 req/s  err 0  p95 1023ms  Pod 6개 → 828k5:272 lxvwv:268 ndr2f:298 nrlbb:300 t2xz4:269 zkq88:294
+22:18:59   173 req/s  err 0  p95 1906ms  Pod 6개 → 828k5:133 lxvwv:145 ndr2f:142 nrlbb:158 t2xz4:142 zkq88:147
+22:19:04   290 req/s  err 0  p95 1106ms  Pod 6개 → 828k5:251 lxvwv:235 ndr2f:250 nrlbb:226 t2xz4:242 zkq88:248
+22:19:09   246 req/s  err 0  p95 1107ms  Pod 6개 → 828k5:193 lxvwv:208 ndr2f:195 nrlbb:217 t2xz4:212 zkq88:203
+22:19:14   229 req/s  err 0  p95 1262ms  Pod 6개 → 828k5:197 lxvwv:185 ndr2f:199 nrlbb:209 t2xz4:174 zkq88:181
+22:19:19   299 req/s  err 0  p95 1110ms  Pod 6개 → 828k5:249 lxvwv:263 ndr2f:251 nrlbb:237 t2xz4:245 zkq88:248
+22:19:24   283 req/s  err 0  p95 1161ms  Pod 6개 → 828k5:218 lxvwv:240 ndr2f:213 nrlbb:243 t2xz4:252 zkq88:251
+22:19:29   208 req/s  err 0  p95 1141ms  Pod 6개 → 828k5:198 lxvwv:159 ndr2f:194 nrlbb:178 t2xz4:160 zkq88:149
+22:19:34   272 req/s  err 0  p95 1904ms  Pod 6개 → 828k5:183 lxvwv:226 ndr2f:246 nrlbb:239 t2xz4:243 zkq88:221
+22:19:39   247 req/s  err 0  p95 1152ms  Pod 6개 → 828k5:213 lxvwv:206 ndr2f:201 nrlbb:202 t2xz4:203 zkq88:208
+22:19:44   229 req/s  err 0  p95 1155ms  Pod 6개 → 828k5:198 lxvwv:178 ndr2f:187 nrlbb:202 t2xz4:178 zkq88:202
+22:19:49   304 req/s  err 0  p95 1143ms  Pod 6개 → 828k5:235 lxvwv:275 ndr2f:232 nrlbb:257 t2xz4:273 zkq88:247
+22:19:54   263 req/s  err 0  p95 1150ms  Pod 6개 → 828k5:236 lxvwv:220 ndr2f:213 nrlbb:203 t2xz4:216 zkq88:227
+22:19:59   241 req/s  err 0  p95 1129ms  Pod 6개 → 828k5:197 lxvwv:203 ndr2f:200 nrlbb:226 t2xz4:210 zkq88:168
+22:20:04   217 req/s  err 0  p95 1183ms  Pod 6개 → 828k5:187 lxvwv:178 ndr2f:199 nrlbb:173 t2xz4:176 zkq88:172
+22:20:09   287 req/s  err 0  p95 1106ms  Pod 6개 → 828k5:230 lxvwv:228 ndr2f:227 nrlbb:218 t2xz4:256 zkq88:274
+22:20:14   270 req/s  err 0  p95 1167ms  Pod 6개 → 828k5:222 lxvwv:200 ndr2f:246 nrlbb:230 t2xz4:239 zkq88:215
+22:20:19   250 req/s  err 0  p95 1138ms  Pod 6개 → 828k5:197 lxvwv:227 ndr2f:209 nrlbb:196 t2xz4:196 zkq88:225
+22:20:24   279 req/s  err 0  p95 1110ms  Pod 6개 → 828k5:236 lxvwv:253 ndr2f:240 nrlbb:230 t2xz4:220 zkq88:214
+22:20:29   277 req/s  err 0  p95 1121ms  Pod 6개 → 828k5:228 lxvwv:204 ndr2f:249 nrlbb:253 t2xz4:211 zkq88:242
+22:20:34   200 req/s  err 0  p95 1903ms  Pod 6개 → 828k5:154 lxvwv:156 ndr2f:204 nrlbb:157 t2xz4:145 zkq88:182
+22:20:39   296 req/s  err 0  p95 1123ms  Pod 6개 → 828k5:229 lxvwv:250 ndr2f:238 nrlbb:271 t2xz4:246 zkq88:246
+22:20:44   250 req/s  err 0  p95 1162ms  Pod 6개 → 828k5:212 lxvwv:211 ndr2f:214 nrlbb:203 t2xz4:216 zkq88:195
+22:20:49   231 req/s  err 0  p95 1150ms  Pod 6개 → 828k5:198 lxvwv:184 ndr2f:217 nrlbb:190 t2xz4:181 zkq88:186
+22:20:54   292 req/s  err 0  p95 1116ms  Pod 6개 → 828k5:254 lxvwv:248 ndr2f:236 nrlbb:233 t2xz4:248 zkq88:243
+22:20:59   303 req/s  err 0  p95 963ms  Pod 6개 → 828k5:266 lxvwv:254 ndr2f:247 nrlbb:246 t2xz4:236 zkq88:264
+22:21:04   177 req/s  err 0  p95 1907ms  Pod 6개 → 828k5:155 lxvwv:128 ndr2f:133 nrlbb:148 t2xz4:169 zkq88:150
+22:21:09    11 req/s  err 0  p95 6709ms  Pod 6개 → 828k5:10 lxvwv:10 ndr2f:10 nrlbb:8 t2xz4:12 zkq88:3
+
+✅ 끝: 성공 44073 · 실패 1 · 응답한 Pod 6개 (chickchicken-7d9b478967-nrlbb, chickchicken-7d9b478967-828k5, chickchicken-7d9b478967-lxvwv, chickchicken-7d9b478967-zkq88, chickchicken-7d9b478967-ndr2f, chickchicken-7d9b478967-t2xz4)

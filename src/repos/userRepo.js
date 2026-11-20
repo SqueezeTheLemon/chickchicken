@@ -1,24 +1,24 @@
-import { db } from '../db.js';
+import { queryOne } from '../db.js';
 
-const toUser = (row) => row && { id: row.id, username: row.username, nickname: row.nickname, createdAt: row.created_at };
-
-const insertStmt = db.prepare('INSERT INTO users (username, nickname, password_hash) VALUES (?, ?, ?)');
-const byUsernameStmt = db.prepare('SELECT * FROM users WHERE username = ?');
-const byIdStmt = db.prepare('SELECT * FROM users WHERE id = ?');
+const toUser = (row) =>
+  row && { id: row.id, username: row.username, nickname: row.nickname, createdAt: new Date(row.created_at).toISOString() };
 
 export const userRepo = {
-  create({ username, nickname, passwordHash }) {
-    const { lastInsertRowid } = insertStmt.run(username, nickname, passwordHash);
-    return this.findById(Number(lastInsertRowid));
+  async create({ username, nickname, passwordHash }) {
+    const row = await queryOne(
+      'INSERT INTO users (username, nickname, password_hash) VALUES ($1, $2, $3) RETURNING *',
+      [username, nickname, passwordHash],
+    );
+    return toUser(row);
   },
   /** 로그인 검증용: password_hash 까지 담긴 원본 행 (응답으로 내보내지 않기!) */
   findCredentials(username) {
-    return byUsernameStmt.get(username);
+    return queryOne('SELECT * FROM users WHERE lower(username) = lower($1)', [username]);
   },
-  existsByUsername(username) {
-    return Boolean(byUsernameStmt.get(username));
+  async existsByUsername(username) {
+    return Boolean(await this.findCredentials(username));
   },
-  findById(id) {
-    return toUser(byIdStmt.get(id));
+  async findById(id) {
+    return toUser(await queryOne('SELECT * FROM users WHERE id = $1', [id]));
   },
 };
