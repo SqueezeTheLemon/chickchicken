@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 다시보기</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <a class="logo" href="/">chickchicken</a>
+    <a class="btn" href="/upload">+ 영상 등록</a>
+  </header>
+  <main>
+    <h1>다시보기</h1>
+    <div id="list" class="grid"></div>
+    <p id="status" class="empty">불러오는 중…</p>
+  </main>
+
+  <script type="module">
+    import { api, el, formatDate } from '/app.js';
+
+    const list = document.getElementById('list');
+    const status = document.getElementById('status');
+
+    try {
+      const broadcasts = await api('/broadcasts');
+      status.textContent = broadcasts.length ? '' : '아직 등록된 방송이 없어요. 첫 영상을 올려보세요!';
+      if (broadcasts.length) status.remove();
+
+      for (const b of broadcasts) {
+        // #t=1 → 첫 프레임을 썸네일처럼 보여줘요 (preload=metadata)
+        const thumb = el('div', { className: 'thumb' },
+          el('video', { src: `${b.videoUrl}#t=1`, preload: 'metadata', muted: true }),
+          el('span', { className: 'badge', textContent: '다시보기' }),
+        );
+        list.append(el('a', { className: 'card', href: `/watch?id=${b.id}` },
+          thumb,
+          el('div', { className: 'title', textContent: b.title }),
+          el('div', { className: 'meta', textContent: formatDate(b.createdAt) }),
+        ));
+      }
+    } catch (e) {
+      status.className = 'error';
+      status.textContent = e.message;
+    }
+  </script>
+</body>
+</html>

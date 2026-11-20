@@ -1,0 +1,19 @@
+{
+  "name": "chickchicken",
+  "version": "0.1.0",
+  "description": "치지직 클론 ① 인증·인가 없는 녹화방송 (VOD)",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env --no-warnings=ExperimentalWarning src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.3",
+    "multer": "^2.5.0"
+  }
+}

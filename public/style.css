@@ -1,0 +1,93 @@
+:root {
+  --bg: #0e0f11;
+  --surface: #1a1b1f;
+  --border: #2a2c31;
+  --text: #f2f3f5;
+  --muted: #9a9ca3;
+  --accent: #00ffa3;
+  --danger: #ff5c5c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Noto Sans KR', sans-serif;
+}
+
+a { color: inherit; text-decoration: none; }
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+}
+
+.logo { font-weight: 800; font-size: 20px; color: var(--accent); }
+
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn:disabled { opacity: .5; cursor: progress; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+h1 { font-size: 22px; margin: 0 0 16px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.card { display: block; }
+.card .thumb {
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+}
+.card .thumb video { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.card .badge {
+  position: absolute; left: 8px; top: 8px;
+  background: rgba(0,0,0,.7); font-size: 12px; padding: 2px 6px; border-radius: 4px;
+}
+.card .title { margin: 8px 0 2px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .meta { color: var(--muted); font-size: 13px; }
+.card:hover .title { color: var(--accent); }
+
+.player { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; }
+.desc { white-space: pre-wrap; color: var(--muted); line-height: 1.6; }
+
+.empty, .error { color: var(--muted); padding: 40px 0; text-align: center; }
+.error { color: var(--danger); }
+
+form { max-width: 560px; display: grid; gap: 16px; }
+label { display: grid; gap: 6px; font-weight: 600; }
+input, textarea {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
+textarea { min-height: 100px; resize: vertical; }
+progress { width: 100%; }
+.msg { min-height: 1.2em; }
+.msg.error { padding: 0; text-align: left; }

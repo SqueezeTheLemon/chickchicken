@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 시청</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <a class="logo" href="/">chickchicken</a>
+    <a class="btn" href="/upload">+ 영상 등록</a>
+  </header>
+  <main id="main">
+    <p id="status" class="empty">불러오는 중…</p>
+  </main>
+
+  <script type="module">
+    import { api, el, formatDate, formatSize } from '/app.js';
+
+    const main = document.getElementById('main');
+    const status = document.getElementById('status');
+    const id = new URLSearchParams(location.search).get('id');
+
+    try {
+      if (!id) throw new Error('잘못된 주소예요.');
+      const b = await api(`/broadcasts/${encodeURIComponent(id)}`);
+      document.title = `${b.title} · chickchicken`;
+
+      const video = el('video', { className: 'player', controls: true, autoplay: true, playsInline: true });
+      video.append(el('source', { src: b.videoUrl, type: b.mimeType }));
+
+      status.replaceWith(
+        video,
+        el('h1', { textContent: b.title, style: 'margin-top:16px' }),
+        el('p', { className: 'meta', textContent: `${formatDate(b.createdAt)} · ${formatSize(b.sizeBytes)}` }),
+        el('p', { className: 'desc', textContent: b.description || '설명이 없어요.' }),
+      );
+    } catch (e) {
+      status.className = 'error';
+      status.textContent = e.message;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 영상 등록</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <a class="logo" href="/">chickchicken</a>
+  </header>
+  <main>
+    <h1>녹화 영상 등록</h1>
+    <form id="form">
+      <label>제목
+        <input name="title" required maxlength="100" placeholder="예) 어제 방송 다시보기" />
+      </label>
+      <label>설명 (선택)
+        <textarea name="description" placeholder="방송 내용을 소개해 주세요"></textarea>
+      </label>
+      <label>영상 파일 (mp4 / webm / ogg / mov)
+        <input name="video" type="file" accept="video/mp4,video/webm,video/ogg,video/quicktime" required />
+      </label>
+      <progress id="progress" value="0" max="100" hidden></progress>
+      <p id="msg" class="msg"></p>
+      <button class="btn" type="submit">등록하기</button>
+    </form>
+  </main>
+
+  <script type="module">
+    const form = document.getElementById('form');
+    const progress = document.getElementById('progress');
+    const msg = document.getElementById('msg');
+    const button = form.querySelector('button');
+
+    // 💡 fetch는 업로드 진행률을 못 줘서 XHR을 써요
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/broadcasts');
+      xhr.responseType = 'json';
+
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) progress.value = (ev.loaded / ev.total) * 100;
+      };
+      xhr.onload = () => {
+        if (xhr.status === 201) {
+          location.href = `/watch?id=${xhr.response.id}`;
+        } else {
+          fail(xhr.response?.error ?? `등록 실패 (${xhr.status})`);
+        }
+      };
+      xhr.onerror = () => fail('네트워크 오류가 발생했어요.');
+
+      button.disabled = true;
+      progress.hidden = false;
+      progress.value = 0;
+      msg.className = 'msg';
+      msg.textContent = '업로드 중…';
+      xhr.send(new FormData(form));
+    });
+
+    function fail(text) {
+      button.disabled = false;
+      progress.hidden = true;
+      msg.className = 'msg error';
+      msg.textContent = text;
+    }
+  </script>
+</body>
+</html>
