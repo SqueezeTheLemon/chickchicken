@@ -162,3 +162,31 @@ progress { width: 100%; }
 .comment-actions button:hover { color: var(--text); }
 .comment-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; max-width: none; }
 .comment-form textarea { min-height: 44px; }
+
+/* ---------- 4단계: 도네이션 ---------- */
+.side { display: grid; gap: 16px; align-content: start; }
+.donations {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; display: grid; gap: 12px;
+}
+.donations h2 { font-size: 16px; margin: 0; }
+.donation-total { color: var(--accent); }
+.donation-amount { color: #ffd166; font-weight: 700; font-size: 13px; }
+.donation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 30vh; overflow-y: auto; }
+.donate-form { display: grid; gap: 8px; max-width: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  background: transparent; color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.chip.active { border-color: var(--accent); color: var(--accent); }
+.chips input { width: 130px; padding: 6px 10px; }
+.small { font-size: 12px; margin: 0; }
+
+.donate-result { max-width: 560px; text-align: center; padding-top: 64px; }
+.result-icon { font-size: 56px; margin: 0; }
+
+.mock-pay { max-width: 420px; text-align: center; padding-top: 48px; }
+.mock-banner { background: #3a2f0b; color: #ffd166; padding: 8px; border-radius: 8px; font-size: 14px; }
+.mock-amount { font-size: 32px; font-weight: 800; margin: 8px 0; }
+.mock-actions { display: grid; gap: 10px; margin-top: 24px; }

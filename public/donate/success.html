@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 후원 확인</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
+  <main class="donate-result">
+    <p id="icon" class="result-icon">⏳</p>
+    <h1 id="title">결제 승인을 확인하고 있어요…</h1>
+    <p id="detail" class="meta">서버가 결제사에 승인을 요청하고 금액·수신자를 확인한 뒤에 후원이 확정돼요.</p>
+    <p><a id="back" class="btn" href="/" hidden>방송으로 돌아가기</a></p>
+  </main>
+
+  <script type="module">
+    import { mountHeader, send } from '/app.js';
+    mountHeader();
+
+    const q = new URLSearchParams(location.search);
+    const $ = (id) => document.getElementById(id);
+    const show = (icon, title, detail) => {
+      $('icon').textContent = icon;
+      $('title').textContent = title;
+      $('detail').textContent = detail;
+      $('back').hidden = false;
+    };
+
+    try {
+      // 💡 이 페이지에 도착했다는 것만으로는 후원 성공이 아니에요. 서버 응답을 받아야 확정이에요.
+      const { donation, duplicated } = await send('POST', '/donations/confirm', {
+        orderId: q.get('orderId'),
+        paymentKey: q.get('paymentKey'),
+        amount: Number(q.get('amount')),
+      });
+      if (donation.broadcastId) $('back').href = `/watch?id=${donation.broadcastId}`;
+      show(
+        '💰',
+        `${donation.streamer.nickname}님에게 ${donation.amount.toLocaleString('ko-KR')}원 후원 완료!`,
+        duplicated
+          ? '이미 확정된 후원이에요. 같은 승인이 다시 와도 한 번만 적립돼요.'
+          : `서버에서 결제 승인과 금액·수신자를 확인했어요. (주문번호 ${donation.orderId})`,
+      );
+      // 새로고침해도 다시 승인 요청은 안전하지만(중복 적립 X), 주소창의 결제 정보는 지워 둬요
+      history.replaceState(null, '', `/donate/success?orderId=${encodeURIComponent(donation.orderId)}&paymentKey=${encodeURIComponent(q.get('paymentKey'))}&amount=${donation.amount}`);
+    } catch (e) {
+      show('⚠️', '후원이 확정되지 않았어요', `${e.message} — 결제가 승인됐다면 자동으로 취소돼요.`);
+    }
+  </script>
+</body>
+</html>

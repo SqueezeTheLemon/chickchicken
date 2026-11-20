@@ -32,6 +32,11 @@ server.listen(config.port, () => {
   }
   if (!useHttps) console.log('   ⚠️  휴대폰 카메라는 HTTPS 에서만 동작해요 (README "휴대폰 접속 환경" 참고)');
   console.log(`   data dir: ${config.dataDir}`);
+  console.log(
+    config.paymentProvider === 'toss'
+      ? '   💳 결제: 토스페이먼츠 테스트 모드'
+      : '   💳 결제: 로컬 모의 결제 (토스 테스트 키를 넣으면 토스 테스트 모드로 바뀌어요)',
+  );
 });
 
 // Ctrl+C 시 진행 중인 송출을 마무리(ENDLIST 기록)하고 종료

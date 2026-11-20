@@ -26,4 +26,13 @@ export const config = {
   // HTTPS 로 서비스할 때 true (HTTPS_KEY_PATH 를 쓰면 자동으로 켜져요). 터널(https) 뒤라면 직접 true 로
   cookieSecure:
     process.env.COOKIE_SECURE === 'true' || Boolean(process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH),
+
+  // 4단계: 도네이션 결제
+  // toss = 토스페이먼츠 테스트 모드, mock = 로컬 모의 결제 (토스 키가 없으면 mock 이 기본)
+  paymentProvider: process.env.PAYMENT_PROVIDER || (process.env.TOSS_SECRET_KEY ? 'toss' : 'mock'),
+  tossClientKey: process.env.TOSS_CLIENT_KEY || '',
+  tossSecretKey: process.env.TOSS_SECRET_KEY || '',
+  donationMinAmount: 1000,
+  donationMaxAmount: 1_000_000,
+  donationOrderTtlMinutes: 30, // 이 시간이 지난 미결제 주문은 승인하지 않아요
 };

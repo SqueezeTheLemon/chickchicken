@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 후원 실패</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
+  <main class="donate-result">
+    <p id="icon" class="result-icon">⏳</p>
+    <h1 id="title">결제 결과를 정리하고 있어요…</h1>
+    <p id="detail" class="meta"></p>
+    <p><a id="back" class="btn" href="/">방송으로 돌아가기</a></p>
+  </main>
+
+  <script type="module">
+    import { mountHeader, send } from '/app.js';
+    mountHeader();
+
+    const q = new URLSearchParams(location.search);
+    const $ = (id) => document.getElementById(id);
+    const code = q.get('code') ?? 'UNKNOWN';
+    const message = q.get('message') ?? '';
+    const canceled = ['PAY_PROCESS_CANCELED', 'USER_CANCEL', 'PAYMENT_REQUEST_ABORTED'].includes(code);
+
+    $('icon').textContent = canceled ? '↩️' : '❌';
+    $('title').textContent = canceled ? '결제를 취소했어요' : '결제에 실패했어요';
+    $('detail').textContent = `${message} (${code}) — 후원은 적립되지 않았어요.`;
+
+    // 서버 주문도 실패/취소로 정리 (확정된 주문은 바뀌지 않아요)
+    const orderId = q.get('orderId');
+    if (orderId) {
+      send('POST', `/donations/${encodeURIComponent(orderId)}/fail`, { code, message })
+        .then((d) => {
+          if (d.broadcastId) $('back').href = `/watch?id=${d.broadcastId}`;
+        })
+        .catch(() => {});
+    }
+  </script>
+</body>
+</html>

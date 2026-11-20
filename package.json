@@ -11,7 +11,8 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning src/server.js",
     "dev": "node --watch --env-file-if-exists=.env --no-warnings=ExperimentalWarning src/server.js",
-    "verify:auth": "node --no-warnings scripts/verify-auth.mjs"
+    "verify:auth": "node --no-warnings scripts/verify-auth.mjs",
+    "verify:donations": "node --no-warnings scripts/verify-donations.mjs"
   },
   "dependencies": {
     "express": "^4.22.3",

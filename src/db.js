@@ -43,6 +43,28 @@ db.exec(`
     updated_at    TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_comments_broadcast ON comments (broadcast_id, id);
+
+  -- 4단계: 도네이션. 주문(PENDING)을 먼저 만들고, 서버가 결제 승인을 확인한 뒤에만 DONE 으로 바꿔요
+  CREATE TABLE IF NOT EXISTS donations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id         TEXT    NOT NULL UNIQUE,              -- 결제사에 넘기는 주문번호 (중복 결제 방지 키)
+    broadcast_id     INTEGER REFERENCES broadcasts(id) ON DELETE SET NULL, -- 방송이 지워져도 후원 기록은 남겨요
+    broadcast_title  TEXT    NOT NULL,                     -- 주문 당시 방송 제목 스냅샷
+    streamer_id      INTEGER NOT NULL REFERENCES users(id),-- 수신 대상: 주문 생성 시 서버가 방송 소유자로 고정
+    donor_id         INTEGER NOT NULL REFERENCES users(id),
+    amount           INTEGER NOT NULL CHECK (amount > 0),  -- 주문 금액: 승인 시 결제 금액과 반드시 일치해야 해요
+    message          TEXT    NOT NULL DEFAULT '',
+    provider         TEXT    NOT NULL,                     -- toss | mock
+    status           TEXT    NOT NULL DEFAULT 'PENDING',   -- PENDING | DONE | FAILED | CANCELED
+    payment_key      TEXT    UNIQUE,                       -- 같은 결제가 두 주문에 쓰이지 못하게
+    method           TEXT,
+    fail_code        TEXT,
+    fail_message     TEXT,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    approved_at      TEXT,
+    updated_at       TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_donations_broadcast ON donations (broadcast_id, status);
 `);
 
 // 💡 마이그레이션: 이전 단계 DB 파일에는 아래 칼럼이 없어서, 없을 때만 ALTER 로 추가해요

@@ -6,6 +6,9 @@ import { config } from './config.js';
 import { authRouter } from './routes/auth.js';
 import { broadcastsRouter } from './routes/broadcasts.js';
 import { commentsRouter } from './routes/comments.js';
+import { donationsRouter } from './routes/donations.js';
+import { paymentGateway } from './payments/index.js';
+import { mockPayRouter } from './payments/mockRoutes.js';
 import { livesRouter } from './routes/lives.js';
 
 export function createApp() {
@@ -16,9 +19,13 @@ export function createApp() {
   app.use('/api', loadUser);
   app.use('/api/auth', authRouter);
   app.use('/api', commentsRouter); // /api/broadcasts/:id/comments, /api/comments/:commentId
+  app.use('/api', donationsRouter); // /api/broadcasts/:id/donations, /api/donations/*, /api/payments/*
   app.use('/api/broadcasts', broadcastsRouter);
   app.use('/api/lives', livesRouter);
   app.use('/api', (_req, res) => res.status(404).json({ error: '찾을 수 없어요.' }));
+
+  // 모의 결제창은 mock 모드에서만 존재해요 (토스 모드에선 404)
+  if (paymentGateway.name === 'mock') app.use(mockPayRouter);
 
   // 💡 express.static은 Range 요청(206 Partial Content)을 지원해서 영상 탐색(seek)이 돼요
   app.use('/videos', express.static(config.uploadDir, { fallthrough: false }));
@@ -47,7 +54,7 @@ export function createApp() {
     if (status >= 500) console.error(err);
     // 정적 파일 404 는 내부 경로가 담긴 ENOENT 메시지라 그대로 내보내지 않아요
     const message = status >= 500 ? '서버 오류가 발생했어요.' : status === 404 ? '찾을 수 없어요.' : err.message;
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: message, ...(status < 500 && err.code ? { code: err.code } : {}) });
   });
 
   return app;

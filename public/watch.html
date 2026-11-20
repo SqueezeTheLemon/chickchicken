@@ -16,6 +16,7 @@
 
   <script type="module">
     import { api, el, formatDate, formatSize, loginUrl, mountHeader, send, statusBadge } from '/app.js';
+    import { openPaymentWindow } from '/payments.js';
 
     const status = document.getElementById('status');
     const id = new URLSearchParams(location.search).get('id');
@@ -110,7 +111,8 @@
       return form;
     }
 
-    // ---------------- 댓글 ----------------
+    // ---------------- 후원 · 댓글 ----------------
+    const donations = buildDonations();
     const comments = buildComments();
 
     status.replaceWith(
@@ -124,10 +126,11 @@
           notice,
           desc,
         ),
-        comments.root,
+        el('div', { className: 'side' }, donations.root, comments.root),
       ),
     );
     renderInfo();
+    donations.start();
     comments.start();
 
     if (b.kind === 'vod') {
@@ -175,6 +178,98 @@
     function showOverlay(text) {
       overlay.hidden = false;
       overlay.textContent = text;
+    }
+
+    function buildDonations() {
+      const PRESETS = [1000, 5000, 10000, 50000];
+      const won = (n) => `${n.toLocaleString('ko-KR')}원`;
+      const total = el('strong', { className: 'donation-total', textContent: '0원' });
+      const count = el('span', { className: 'meta' });
+      const list = el('ul', { className: 'donation-list' });
+      const root = el('aside', { className: 'donations' },
+        el('h2', {}, '💰 후원 ', total, ' ', count),
+      );
+
+      // 후원 폼: 로그인 + 방송자가 있는 방송 + 내 방송이 아닐 때만 보여요 (서버도 같은 규칙으로 막아요)
+      if (!b.owner) {
+        root.append(el('p', { className: 'meta', textContent: '방송자 정보가 없는 방송이라 후원할 수 없어요.' }));
+      } else if (!me) {
+        root.append(el('p', { className: 'meta' }, el('a', { className: 'accent', href: loginUrl(), textContent: '로그인' }), `하고 ${b.owner.nickname}님을 후원해 보세요.`));
+      } else if (isOwner()) {
+        root.append(el('p', { className: 'meta', textContent: '내 방송이라 후원할 수 없어요. 받은 후원은 아래에 쌓여요.' }));
+      } else {
+        let amount = PRESETS[0];
+        const custom = el('input', { type: 'number', min: 1000, max: 1000000, step: 100, placeholder: '직접 입력(원)' });
+        const chips = PRESETS.map((v) =>
+          el('button', { type: 'button', className: 'chip', textContent: won(v), onclick: () => select(v) }),
+        );
+        const message = el('input', { maxLength: 100, placeholder: `${b.owner.nickname}님에게 한마디 (선택)` });
+        const submit = el('button', { className: 'btn', type: 'submit' });
+        const form = el('form', { className: 'donate-form' },
+          el('p', { className: 'meta', textContent: `받는 사람: ${b.owner.nickname}` }),
+          el('div', { className: 'chips' }, ...chips, custom),
+          message,
+          submit,
+          el('p', { className: 'meta small', textContent: '테스트 결제예요. 실제로 돈이 나가지 않아요.' }),
+        );
+        function select(v) {
+          amount = v;
+          chips.forEach((c, i) => c.classList.toggle('active', PRESETS[i] === v));
+          if (PRESETS.includes(v)) custom.value = '';
+          submit.textContent = `${won(v)} 후원하기`;
+        }
+        custom.oninput = () => select(Number(custom.value) || 0);
+        select(amount);
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          submit.disabled = true;
+          try {
+            // 1) 서버가 주문을 만들고 수신자·금액을 고정 → 2) 결제창 → 3) successUrl 에서 서버가 승인 확인
+            const order = await send('POST', `/broadcasts/${b.id}/donations`, { amount, message: message.value });
+            await openPaymentWindow(order);
+          } catch (err) {
+            alert(err.message);
+          } finally {
+            submit.disabled = false;
+          }
+        });
+        root.append(form);
+      }
+      root.append(list);
+
+      let lastSig = '';
+      async function refresh() {
+        const data = await api(`/broadcasts/${b.id}/donations`).catch(() => null);
+        if (!data) return;
+        const sig = `${data.total}:${data.count}`;
+        if (sig === lastSig) return;
+        lastSig = sig;
+        total.textContent = won(data.total);
+        count.textContent = `${data.count}건`;
+        list.replaceChildren(
+          ...(data.donations.length
+            ? data.donations.map((d) =>
+                el('li', {},
+                  el('div', { className: 'comment-head' },
+                    el('strong', { textContent: d.donor.nickname }),
+                    el('span', { className: 'donation-amount', textContent: won(d.amount) }),
+                    el('span', { className: 'meta', textContent: new Date(d.approvedAt).toLocaleString('ko-KR') }), // 결제사 ISO 시각(시간대 포함)
+                  ),
+                  d.message ? el('p', { className: 'comment-body', textContent: d.message }) : '',
+                ),
+              )
+            : [el('li', { className: 'meta', textContent: '아직 후원이 없어요.' })]),
+        );
+      }
+
+      return {
+        root,
+        start() {
+          refresh();
+          setInterval(() => document.visibilityState === 'visible' && refresh(), 5000);
+        },
+      };
     }
 
     function buildComments() {

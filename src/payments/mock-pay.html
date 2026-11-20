@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>모의 결제창 (테스트 전용)</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="mock-pay">
+    <p class="mock-banner">🧪 로컬 모의 결제창 · 실제 결제가 일어나지 않아요</p>
+    <h1 id="order-name">결제</h1>
+    <p class="mock-amount"><span id="amount">0</span>원</p>
+    <p class="meta">주문번호 <code id="order-id"></code></p>
+
+    <div class="mock-actions">
+      <button class="btn" data-outcome="success">✅ 결제하기 (승인)</button>
+      <button class="btn ghost" data-outcome="reject">❌ 카드사 거절 (결제 실패)</button>
+      <button class="btn ghost" data-outcome="confirm-reject">⚠️ 승인 단계 거절 (서버 승인 시 실패)</button>
+      <button class="btn ghost" data-outcome="cancel">↩️ 결제 취소 (창 닫기)</button>
+    </div>
+    <p id="msg" class="msg"></p>
+  </main>
+
+  <script type="module">
+    const q = new URLSearchParams(location.search);
+    const order = {
+      orderId: q.get('orderId'),
+      orderName: q.get('orderName'),
+      amount: Number(q.get('amount')), // 💡 토스처럼 금액은 "브라우저가 넘긴 값" → 서버가 승인 때 다시 대조해요
+      metadata: JSON.parse(q.get('metadata') || '{}'),
+      successUrl: q.get('successUrl'),
+      failUrl: q.get('failUrl'),
+    };
+    document.getElementById('order-name').textContent = order.orderName;
+    document.getElementById('amount').textContent = order.amount.toLocaleString('ko-KR');
+    document.getElementById('order-id').textContent = order.orderId;
+
+    for (const btn of document.querySelectorAll('[data-outcome]')) {
+      btn.onclick = async () => {
+        const res = await fetch('/mock-pay/api/authorize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...order, outcome: btn.dataset.outcome }),
+        });
+        const body = await res.json();
+        if (body.redirect) location.href = body.redirect;
+        else document.getElementById('msg').textContent = body.error;
+      };
+    }
+  </script>
+</body>
+</html>
