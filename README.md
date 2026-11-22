@@ -6,7 +6,8 @@
 | ② | 휴대폰 라이브 송출·시청, 방송 중·종료 상태 표시 |
 | ③ | 회원가입·로그인·로그아웃, 방송 소유자 권한 검사, 댓글 |
 | ④ | 방송자 후원(도네이션): 토스페이먼츠 테스트 결제, 서버 승인 확인, 중복 통지 방지, 방송별 내역·합계 |
-| **⑤ (현재)** | **컨테이너 이미지, 로컬 쿠버네티스(kind)에서 여러 인스턴스 + HPA 자동 스케일, 상태를 공용 저장소(PostgreSQL·공유 볼륨)로** |
+| ⑤ | 컨테이너 이미지, 로컬 쿠버네티스(kind)에서 여러 인스턴스 + HPA 자동 스케일, 상태를 공용 저장소(PostgreSQL·공유 볼륨)로 |
+| **⑥ (현재)** | **OCI Always Free VM 배포 설정, 도메인 + HTTPS(Caddy), 데스크톱 클라이언트(Windows·macOS) 빌드와 다운로드 페이지** → [⑥ 배포·도메인·데스크톱](#-배포도메인데스크톱-6단계) |
 
 ## 기술 스택
 
@@ -51,6 +52,180 @@ npm run cluster:down   # 클러스터 삭제
 
 자세한 구조와 확인 절차는 아래 "⑤ 여러 인스턴스 + 오토스케일"을 보세요.
 
+## ⑥ 배포·도메인·데스크톱 (6단계)
+
+> ⏳ 표시는 **아직 하지 않은 일**이에요. OCI 계정 가입이 계속 실패해서 VM 생성·도메인 구매·외부 접속 확인은 진행하지 못했어요.
+> 계정·도메인이 준비되면 해당 칸을 실제 값으로 채워요. 아래 설정과 절차는 그 값만 넣으면 그대로 배포되도록 만들어 뒀어요.
+
+### 구성
+
+```
+ 사용자 브라우저 / 데스크톱 앱 (Windows·macOS)
+        │ https://<도메인>
+        ▼
+ DNS  A 레코드 <도메인> → VM 공인 IP
+        ▼
+ ┌──────────── OCI Always Free VM (Ubuntu, Docker Compose) ────────────┐
+ │ caddy :80/:443  ── Let's Encrypt 인증서 자동 발급·갱신, http→https   │
+ │   └▶ app :3000 (chickchicken 이미지, /api/health · /readyz · /healthz)│
+ │        ├▶ db  (PostgreSQL 17, 볼륨 dbdata)                          │
+ │        └▶ 볼륨 media (업로드 영상 · 라이브 HLS)                     │
+ └──────────────────────────────────────────────────────────────────────┘
+ 패키지 파일: GitHub Releases (GitHub Actions 가 Windows·macOS 러너에서 빌드·업로드)
+```
+
+### 1. 도메인과 HTTPS
+
+| 항목 | 내용 |
+| --- | --- |
+| 도메인 등록 여부 | ⏳ **미등록** (구매 예정) |
+| 등록한 도메인 | ⏳ 채워야 함 |
+| 등록처 | ⏳ 채워야 함 |
+| 최초 등록 비용 | ⏳ 채워야 함 (구매 영수증 기준, 원·달러 표기) |
+| 갱신 비용(1년) | ⏳ 채워야 함. 첫해 할인 뒤 갱신가가 더 비싼 경우가 많아서 구매 화면의 갱신가를 그대로 옮겨요 |
+| 공개 주소 | ⏳ `https://<도메인>` · 다운로드 `https://<도메인>/download` · 상태 `https://<도메인>/api/health` |
+
+**DNS 구성** (등록처의 DNS 관리 화면)
+
+| 타입 | 이름 | 값 | TTL |
+| --- | --- | --- | --- |
+| A | `@` (도메인 자체) | VM 공인 IPv4 | 300 |
+| A 또는 CNAME | `www` | VM 공인 IPv4 또는 `@` | 300 |
+
+- 확인: `dig +short <도메인>` → VM 공인 IP가 나와야 해요.
+- Caddy는 DNS가 VM을 가리킬 때까지 인증서 발급을 재시도해요. 그래서 VM을 먼저 띄우고 DNS를 나중에 맞춰도 괜찮아요.
+
+**TLS(HTTPS) 구성**: [deploy/Caddyfile](deploy/Caddyfile)
+- `{$DOMAIN}` 블록 하나로 끝나요. Caddy가 **Let's Encrypt(ACME HTTP-01)** 로 인증서를 자동 발급하고, 만료 전에 자동으로 갱신해요. 인증서는 `caddy_data` 볼륨에 저장돼요.
+- http(80)로 들어온 요청은 https로 이동(308)시키고, HSTS 헤더를 붙여요. `www.<도메인>`은 `<도메인>`으로 보내요.
+- 백엔드는 `COOKIE_SECURE=true`(세션 쿠키 Secure), `TRUST_PROXY=1`(Caddy 한 단계)로 실행해요.
+- 필요한 포트: **OCI VCN 보안 목록** 인그레스 TCP 80·443 (+ UDP 443), **VM 안의 iptables** 80·443. 후자는 `setup-vm.sh`가 열어요.
+- 로컬 확인(완료): `DOMAIN=localhost`로 운영 구성을 띄워서 아래를 확인했어요.
+  - HTTPS 응답, http→https 308, HSTS 헤더
+  - `/api/health` 200
+  - 권한 점검 54/54 (WebSocket 송출 포함)
+
+### 2. OCI Always Free VM
+
+| 항목 | 계획 | 실제 |
+| --- | --- | --- |
+| 홈 리전 | 서울(`ap-seoul-1`) 또는 춘천(`ap-chuncheon-1`): 가입할 때 정해지고 바꿀 수 없어요 | ⏳ 채워야 함 |
+| Shape | **`VM.Standard.A1.Flex`** (Ampere ARM64) | ⏳ 채워야 함 |
+| OCPU / 메모리 | **2 OCPU / 12 GB** | ⏳ 채워야 함 |
+| 부트 볼륨 | 50 GB (Always Free 블록 스토리지 200GB 안) | ⏳ |
+| OS 이미지 | Canonical Ubuntu 24.04 (aarch64) | ⏳ |
+| 가용성·한도 확인 | 콘솔 → **Governance → Limits, Quotas and Usage**에서 `Compute / Cores for Standard.A1 based VM`과 `Memory`의 사용 가능 값, 다른 A1 인스턴스 유무 | ⏳ 확인 결과 기록 |
+
+**Always Free 선택 근거**
+- A1.Flex는 Always Free 범위(계정 전체 A1 합계 **4 OCPU / 24GB**까지 무료)에서 가장 성능이 좋은 선택지예요. 과제 기준인 2 OCPU·12GB를 쓰면 무료 할당량의 절반만 써서, 같은 계정에 VM 하나를 더 둘 여유도 남아요.
+- 이 서비스는 **ffmpeg 라이브 변환(H.264 인코딩)** 과 PostgreSQL을 한 VM에서 돌려요. 그래서 1GB 메모리 VM보다 12GB가 안정적이에요.
+- 서버 이미지가 `node:22-alpine` 기반이라 **ARM64에서 그대로 빌드**돼요. VM 안에서 `docker compose build`로 만들어요.
+
+**재고·리전 제한이 있을 때의 무료 대안** (실제로 쓰게 되면 그 이유를 여기에 남겨요)
+1. 같은 A1.Flex를 **1 OCPU / 6GB**로 낮춰서 다시 시도해요. 작은 용량은 재고가 있는 경우가 많아요. 가용성 도메인(AD)도 바꿔서 시도해요.
+2. **`VM.Standard.E2.1.Micro`** (AMD x86, 1/8 OCPU, 1GB, Always Free 2대): `setup-vm.sh`가 메모리가 3GB 미만이면 **스왑 2GB**를 자동으로 만들어요. 다만 라이브 변환은 느릴 수 있어요.
+3. ⏳ 실제 선택과 이유: 채워야 함
+
+### 3. 백엔드 배포 (재현 절차)
+
+배포 설정 파일
+- [deploy/docker-compose.prod.yml](deploy/docker-compose.prod.yml): db + app + caddy. DB 포트는 외부에 열지 않아요.
+- [deploy/Caddyfile](deploy/Caddyfile)
+- [deploy/.env.prod.example](deploy/.env.prod.example): 서비스 주소(`DOMAIN`)와 비밀 값(`POSTGRES_PASSWORD`, 토스 키)은 **VM의 `deploy/.env.prod`에만** 둬요(커밋 금지, `.gitignore`).
+- [deploy/setup-vm.sh](deploy/setup-vm.sh): 설치부터 실행까지 한 번에, 여러 번 실행해도 안전해요.
+- [deploy/cloud-init.yaml](deploy/cloud-init.yaml): 인스턴스를 만들 때 붙여 넣으면 첫 부팅에 자동 배포해요.
+
+절차
+1. OCI 콘솔 → **Compute → Instances → Create instance**
+   - 이미지 Ubuntu 24.04, Shape `VM.Standard.A1.Flex` 2 OCPU / 12GB
+   - 공인 IPv4 할당, SSH 키 등록
+   - (선택) 고급 옵션 → 관리 → Cloud-init에 `deploy/cloud-init.yaml`을 붙여 넣기 (도메인·메일만 바꿔서)
+2. **Networking → VCN → Security List → Ingress Rules**에 TCP 80, TCP 443(+UDP 443) `0.0.0.0/0` 추가
+3. 도메인 DNS A 레코드 → VM 공인 IP (위 표)
+4. VM에 SSH로 접속해서 실행해요(cloud-init을 썼다면 생략).
+
+   ```bash
+   ssh ubuntu@<VM 공인 IP>
+   curl -fsSLO https://raw.githubusercontent.com/SqueezeTheLemon/chickchicken/main/deploy/setup-vm.sh
+   sudo bash setup-vm.sh --domain <도메인> --email <메일>
+   ```
+
+   이 스크립트가 하는 일이에요.
+   - Docker·Compose 설치
+   - (메모리가 작으면) 스왑 생성
+   - iptables 80·443 열기
+   - 소스를 `/opt/chickchicken`에 받기
+   - `.env.prod` 생성(DB 비밀번호 **랜덤**)
+   - `docker compose up -d --build`
+   - `https://<도메인>/api/health`가 응답할 때까지 대기
+
+5. 업데이트: `sudo bash /opt/chickchicken/deploy/setup-vm.sh` (기존 `.env.prod` 유지)
+6. 로그: `cd /opt/chickchicken/deploy && docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f app caddy`
+
+**상태 확인 경로**
+
+| 경로 | 용도 | 응답 |
+| --- | --- | --- |
+| `GET /api/health` | 배포 상태 확인 (사람·모니터링) | `{status, version, commit, db, payment, instance, publicBaseUrl, startedAt, uptimeSeconds}`. DB가 안 되면 503 |
+| `GET /readyz` | 트래픽을 받아도 되는지 (DB 연결 + 종료 중 아님) | 200 / 503. Caddy `health_uri`, compose healthcheck에서 써요 |
+| `GET /healthz` | 프로세스 생존 | 200 |
+
+**기존 기능 유지**: 방송(VOD·라이브)·계정·댓글·후원 코드는 그대로예요. 6단계에서 바뀐 건 공개 조회 CORS, 프록시 설정, `/api/health`뿐이에요. 회귀 점검: 권한 54/54, 도네이션 36/36 통과.
+
+### 4. 데스크톱 클라이언트 (Windows · macOS)
+
+- **소스**: [desktop/](desktop/). **Electron 33** + **electron-builder 25**, 재생은 앱에 넣은 **hls.js**.
+  - [desktop/main.js](desktop/main.js): 창, 보안 설정(contextIsolation·sandbox), 외부 링크는 기본 브라우저로
+  - [desktop/renderer/app.js](desktop/renderer/app.js): 배포 백엔드의 `GET /api/broadcasts`(목록), `GET /api/broadcasts/:id`(상세)로 **방송 목록 조회**. 녹화방송은 `<video>`(mp4, Range 탐색), 라이브·종료된 라이브는 hls.js로 **재생**
+  - 서버 주소: [desktop/config.json](desktop/config.json)의 `defaultServerUrl`이 기본값이에요. CI가 빌드할 때 배포 도메인으로 바꿔 넣고, 앱의 **⚙️ 서버 설정**에서도 바꿀 수 있어요(연결 테스트는 `/api/health`).
+  - 백엔드는 앱이 쓰는 **공개 조회 경로만 CORS**를 열어요. 로그인 쿠키는 허용하지 않고, 로그인 같은 경로는 열지 않아요(확인 완료).
+- **빌드 설정**: [desktop/package.json](desktop/package.json)의 `build`
+
+  | OS | 아키텍처 | 파일 | 형식 |
+  | --- | --- | --- | --- |
+  | Windows 10/11 | x64 | `Chickchicken-win-x64-setup.exe`, `Chickchicken-win-x64.zip` | NSIS 설치 파일 / 설치 없이 실행 |
+  | Windows 10/11 | ARM64 | `Chickchicken-win-arm64-setup.exe`, `Chickchicken-win-arm64.zip` | 〃 |
+  | macOS 11+ | Apple Silicon (arm64) | `Chickchicken-mac-arm64.dmg`, `Chickchicken-mac-arm64.zip` | 디스크 이미지 / 앱 압축 |
+  | macOS 11+ | Intel (x64) | `Chickchicken-mac-x64.dmg`, `Chickchicken-mac-x64.zip` | 〃 |
+
+- **빌드 방법**
+  - 로컬: `cd desktop && npm ci && npm run dist:mac` (macOS), `npm run dist:win` (Windows 또는 macOS. macOS에서는 electron-builder가 내장 wine을 받아서 NSIS를 만들어요) → `desktop/dist/`
+  - CI: [.github/workflows/desktop.yml](.github/workflows/desktop.yml). `git tag desktop-v1.0.0 && git push origin desktop-v1.0.0`을 하면 **macOS 러너·Windows 러너**에서 각각 빌드하고, GitHub Release(latest)에 올려요. 저장소 Variables `CHICKCHICKEN_SERVER_URL`에 배포 주소를 넣으면 앱의 기본 서버가 돼요.
+  - 코드 서명·공증은 하지 않았어요. 설치할 때 뜨는 OS 경고를 넘기는 방법은 다운로드 페이지에 적어 뒀어요.
+
+### 5. 다운로드 페이지
+
+- **소스**: [public/download.html](public/download.html) → `https://<도메인>/download` (⏳ 공개 주소는 도메인 연결 후)
+  - OS별 파일 링크는 `https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/<파일명>`이에요. 파일명에 버전이 없어서 항상 최신 Release를 가리켜요.
+  - 지원 아키텍처, OS별 설치·실행 방법(SmartScreen "추가 정보 → 실행", macOS "Control+클릭 → 열기"·`xattr`), 처음 실행 안내가 들어 있어요.
+  - 접속한 OS를 감지해서 해당 카드를 강조하고, GitHub API로 최신 버전을 표시해요.
+  - 헤더의 **⬇️ 앱 다운로드**로 들어가요.
+- ⚠️ 링크가 동작하려면 GitHub 저장소가 **공개(public)** 이고, `desktop-v*` 태그로 Release가 한 번 이상 올라가 있어야 해요. ⏳ 아직 Release를 올리지 않았어요.
+
+### 6. OS별 설치·실행 확인 절차
+
+**macOS**
+1. `https://<도메인>/download`에서 칩에 맞는 `.dmg`를 받아요( → 이 Mac에 관하여 → 칩).
+2. dmg를 열고 Chickchicken을 응용 프로그램으로 끌어 놓아요.
+3. 처음 실행은 **Control+클릭 → 열기**. "손상됨"이 뜨면 `xattr -dr com.apple.quarantine /Applications/Chickchicken.app`
+4. 앱 첫 화면에 배포 서버의 **방송 목록**이 뜨는지 확인해요. 녹화방송 카드를 눌러 **재생·탐색**, 라이브(또는 종료된 라이브) 카드를 눌러 **HLS 재생**을 확인해요.
+5. ⚙️ 서버 설정 → 연결 테스트에 `✅ 연결됨 — 서버 vX (commit)`이 나오는지 확인해요.
+
+**Windows**
+1. `https://<도메인>/download`에서 `Chickchicken-win-x64-setup.exe`를 받아요(ARM PC는 arm64).
+2. 실행해서 SmartScreen이 뜨면 **추가 정보 → 실행** → 설치해요. 또는 zip을 풀고 `Chickchicken.exe`를 실행해요.
+3. 시작 메뉴·바탕화면의 Chickchicken 실행 → 방송 목록 → 녹화방송·라이브 재생, 서버 설정 연결 테스트(macOS 4~5와 같아요)
+
+**테스트 결과**
+
+| OS | 아키텍처 | 패키지 | 받은 경로 | 설치·실행 | 목록 조회 | 재생 | 비고 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| macOS 14 (MacBook, Apple Silicon) | arm64 | `Chickchicken-mac-arm64` (로컬 빌드한 `.app`) | 로컬 빌드 | ✅ 실행 | ✅ 9개 (로컬 백엔드) | ✅ VOD mp4 / ✅ HLS 다시보기 | 2026-11-22. 배포 백엔드가 아닌 `http://localhost:3000`으로 확인 |
+| macOS | x64 (Intel) | `Chickchicken-mac-x64.dmg` | ⏳ | ⏳ 빌드만 확인 (Mach-O x86_64) | ⏳ | ⏳ | Intel Mac에서 확인 필요 |
+| Windows 10/11 | x64 | `Chickchicken-win-x64-setup.exe` | ⏳ | ⏳ 빌드만 확인 (PE32+ x86-64) | ⏳ | ⏳ | Windows PC에서 확인 필요 |
+| Windows 11 | arm64 | `Chickchicken-win-arm64-setup.exe` | ⏳ | ⏳ 빌드만 확인 (PE32+ Aarch64) | ⏳ | ⏳ | |
+| 외부 네트워크 → 도메인 HTTPS·다운로드 | - | - | ⏳ | - | - | - | 도메인·VM 준비 후 (휴대폰 LTE 등 외부망에서 `https://<도메인>`, `/download`, `/api/health`) |
+
 ## 환경변수
 
 | 이름 | 기본값 | 설명 |
@@ -70,6 +245,11 @@ npm run cluster:down   # 클러스터 삭제
 | `PAYMENT_PROVIDER` | 토스 키가 있으면 `toss`, 없으면 `mock` | `toss` = 토스페이먼츠 테스트 모드, `mock` = 로컬 모의 결제 |
 | `TOSS_CLIENT_KEY` | (없음) | 토스페이먼츠 **API 개별 연동 테스트 클라이언트 키** (`test_ck_…`). 브라우저에 공개돼도 되는 키예요 |
 | `TOSS_SECRET_KEY` | (없음) | 토스페이먼츠 **테스트 시크릿 키** (`test_sk_…`). 서버에만 둬요. **절대 커밋 금지** |
+| `PUBLIC_BASE_URL` | (없음) | 공개 주소 (예: `https://<도메인>`). `/api/health`에 표시돼요. 운영 compose는 `https://${DOMAIN}`으로 넣어요 |
+| `GIT_SHA` | `dev` | 배포한 커밋. `/api/health`의 `commit`에 표시돼요. `setup-vm.sh`가 넣어요 |
+| `TRUST_PROXY` | `1` | 앞단 리버스 프록시 단계 수 (Caddy 1단계) |
+| `CORS_PUBLIC_ORIGINS` | `*` | 데스크톱 앱 등 다른 출처에 **공개 조회(GET)** 를 허용할 출처 (쉼표 구분) |
+| `DOMAIN`, `ACME_EMAIL` | - | **운영 전용** (`deploy/.env.prod`). Caddy가 이 도메인으로 인증서를 받고, 만료 알림을 이 메일로 보내요 |
 
 - 세션은 서명 키가 필요 없는 구조예요. 토큰은 서버가 랜덤으로 만들고, DB에는 해시만 저장해요.
 - 결제 키는 [토스페이먼츠 개발자센터 → API 키](https://developers.tosspayments.com/my/api-keys)에서 **본인 테스트 키**를 발급받아 `.env`에만 넣으세요. 저장소에는 키를 넣지 않았어요.
@@ -147,7 +327,7 @@ npm run cluster:down   # 클러스터 삭제
 - **방송별 후원 내역·합계**: 상세 화면 후원 패널에 **확정(DONE)된 후원만** 합계·건수·최근 내역(후원자, 금액, 메시지, 시각)으로 보여요. 5초마다 갱신돼요.
 - 방송을 삭제해도 후원 기록은 남아요(`broadcast_id`만 NULL, 방송 제목은 스냅샷으로 저장).
 
-### ⑤ 여러 인스턴스 + 오토스케일 (이번 단계)
+### ⑤ 여러 인스턴스 + 오토스케일 (유지)
 
 ```
                         localhost:8080
@@ -580,5 +760,18 @@ docs/
   hpa-events.txt         HPA 스케일 이벤트
   load-log.txt           부하 실행 출력
   continuity-log.txt     스케일 중 상태 유지 확인 출력
+deploy/                  6단계: VM 운영 배포
+  docker-compose.prod.yml  caddy(HTTPS) + app + db
+  Caddyfile              도메인 HTTPS 자동 발급·갱신, http→https, 보안 헤더
+  .env.prod.example      운영 설정 예시 (실제 .env.prod 는 커밋 금지)
+  setup-vm.sh            Ubuntu VM 설치·방화벽·배포·업데이트 (여러 번 실행해도 안전)
+  cloud-init.yaml        OCI 인스턴스 생성 시 자동 배포
+desktop/                 6단계: Electron 데스크톱 클라이언트
+  main.js, preload.js    창·보안 설정, 앱 정보 전달
+  renderer/              방송 목록·재생 화면 (index.html, app.js, style.css)
+  config.json            기본 서버 주소
+  package.json           electron-builder 설정 (Windows NSIS·zip, macOS dmg·zip)
+.github/workflows/desktop.yml  Windows·macOS 러너에서 빌드 → GitHub Release
+public/download.html     다운로드 페이지 (OS별 링크·아키텍처·설치 방법)
 Dockerfile, .dockerignore, docker-compose.yml(개발용 Postgres)
 ```

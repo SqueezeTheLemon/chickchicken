@@ -190,3 +190,18 @@ progress { width: 100%; }
 .mock-banner { background: #3a2f0b; color: #ffd166; padding: 8px; border-radius: 8px; font-size: 14px; }
 .mock-amount { font-size: 32px; font-weight: 800; margin: 8px 0; }
 .mock-actions { display: grid; gap: 10px; margin-top: 24px; }
+
+/* ---------- 6단계: 다운로드 페이지 ---------- */
+.download { max-width: 1100px; display: grid; gap: 20px; }
+.os-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
+@media (max-width: 520px) { .os-grid { grid-template-columns: 1fr; } }
+.os-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+.os-card.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.os-card h2 { margin: 0 0 4px; font-size: 20px; }
+.os-card h3 { font-size: 15px; margin: 16px 0 6px; }
+.os-card ol, .os-card ul { padding-left: 20px; line-height: 1.7; color: var(--text); }
+.os-card code { background: #000; padding: 1px 5px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+.dl-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.dl-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px; border-bottom: 1px solid var(--border); }
+.dl-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.dl-table .btn { font-size: 12px; padding: 5px 9px; word-break: break-all; }

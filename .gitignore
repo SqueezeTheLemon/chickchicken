@@ -3,3 +3,8 @@ data/
 .env
 .DS_Store
 certs/
+
+# 6단계
+deploy/.env.prod
+desktop/node_modules/
+desktop/dist/

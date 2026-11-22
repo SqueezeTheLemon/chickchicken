@@ -1,0 +1,82 @@
+# 6단계: 데스크톱 클라이언트 빌드 → GitHub Release 업로드
+#   - 태그 push:   git tag desktop-v1.0.0 && git push origin desktop-v1.0.0   → 빌드 + Release 에 파일 업로드
+#   - 수동 실행:   Actions 탭 → desktop → Run workflow (빌드 결과는 Artifacts 로만)
+# 기본 서버 주소: 저장소 Variables 의 CHICKCHICKEN_SERVER_URL (예: https://chickchicken.example.com) 또는 수동 실행 입력값
+# 다운로드 페이지는 https://github.com/<저장소>/releases/latest/download/<파일명> 으로 링크해요 (파일명에 버전이 없어요)
+name: desktop
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "앱의 기본 서버 주소 (비우면 저장소 변수 CHICKCHICKEN_SERVER_URL)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest      # Apple Silicon 러너에서 arm64 + x64(Intel) 둘 다 빌드
+            script: dist:mac
+          - os: windows-latest    # x64 + arm64 설치 파일(NSIS)과 zip
+            script: dist:win
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: 기본 서버 주소 넣기
+        shell: bash
+        env:
+          SERVER_URL: ${{ inputs.server_url || vars.CHICKCHICKEN_SERVER_URL }}
+        run: |
+          if [ -n "$SERVER_URL" ]; then
+            printf '{\n  "defaultServerUrl": "%s"\n}\n' "$SERVER_URL" > config.json
+          fi
+          cat config.json
+      - name: 패키지 빌드
+        run: npm run ${{ matrix.script }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false" # 코드 서명 인증서 없이 빌드 (설치 시 OS 경고 → 다운로드 페이지에 안내)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - run: ls -la out
+      - name: GitHub Release 에 업로드 (latest 로 표시)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --latest \
+              --title "Chickchicken Desktop ${GITHUB_REF_NAME#desktop-}" \
+              --notes "Windows(x64·arm64)·macOS(Apple Silicon·Intel) 데스크톱 클라이언트. 설치 방법은 다운로드 페이지(/download)를 보세요."
+          gh release upload "$GITHUB_REF_NAME" out/* --clobber --repo "$GITHUB_REPOSITORY"

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>chickchicken · 앱 다운로드</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header id="site-header"><a class="logo" href="/">chickchicken</a></header>
+  <main class="download">
+    <h1>⬇️ Chickchicken 데스크톱 앱</h1>
+    <p class="meta">
+      방송 목록을 보고 녹화방송·라이브를 재생하는 데스크톱 클라이언트예요.
+      <span id="version-info"></span>
+    </p>
+    <p id="detected" class="notice"></p>
+
+    <!--
+      💡 패키지 파일은 GitHub Release 에 올라가요 (.github/workflows/desktop.yml 이 빌드·업로드)
+         파일 이름에 버전이 없어서 "latest/download/<파일명>" 링크가 항상 최신 버전을 가리켜요.
+    -->
+    <section class="os-grid">
+      <article class="os-card" id="os-win">
+        <h2>🪟 Windows</h2>
+        <p class="meta">Windows 10 / 11</p>
+        <table class="dl-table">
+          <thead><tr><th>파일</th><th>아키텍처</th><th>형식</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a class="btn" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-win-x64-setup.exe">Chickchicken-win-x64-setup.exe</a></td>
+              <td>x64 (Intel·AMD 64비트)</td><td>설치 파일</td>
+            </tr>
+            <tr>
+              <td><a class="btn ghost" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-win-x64.zip">Chickchicken-win-x64.zip</a></td>
+              <td>x64</td><td>설치 없이 실행</td>
+            </tr>
+            <tr>
+              <td><a class="btn ghost" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-win-arm64-setup.exe">Chickchicken-win-arm64-setup.exe</a></td>
+              <td>ARM64 (Snapdragon 등)</td><td>설치 파일</td>
+            </tr>
+            <tr>
+              <td><a class="btn ghost" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-win-arm64.zip">Chickchicken-win-arm64.zip</a></td>
+              <td>ARM64</td><td>설치 없이 실행</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>설치·실행</h3>
+        <ol>
+          <li><b>설치 파일</b>(<code>…-setup.exe</code>)을 내려받아 실행해요.</li>
+          <li>코드 서명이 없는 앱이라 <b>"Windows의 PC 보호"</b>(SmartScreen) 창이 뜰 수 있어요 → <b>추가 정보</b> → <b>실행</b>을 눌러요.</li>
+          <li>설치 위치를 고르고 설치하면 바탕화면·시작 메뉴에 <b>Chickchicken</b>이 생겨요.</li>
+          <li><b>zip</b>을 받았다면 압축을 풀고 <code>Chickchicken.exe</code>를 실행해요(설치 없음).</li>
+          <li>삭제: 설정 → 앱 → Chickchicken → 제거</li>
+        </ol>
+      </article>
+
+      <article class="os-card" id="os-mac">
+        <h2>🍎 macOS</h2>
+        <p class="meta">macOS 11 Big Sur 이상</p>
+        <table class="dl-table">
+          <thead><tr><th>파일</th><th>아키텍처</th><th>형식</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a class="btn" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-mac-arm64.dmg">Chickchicken-mac-arm64.dmg</a></td>
+              <td>Apple Silicon (M1~M4, arm64)</td><td>디스크 이미지</td>
+            </tr>
+            <tr>
+              <td><a class="btn ghost" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-mac-x64.dmg">Chickchicken-mac-x64.dmg</a></td>
+              <td>Intel (x64)</td><td>디스크 이미지</td>
+            </tr>
+            <tr>
+              <td><a class="btn ghost" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-mac-arm64.zip">Chickchicken-mac-arm64.zip</a></td>
+              <td>Apple Silicon</td><td>앱 압축 파일</td>
+            </tr>
+            <tr>
+              <td><a class="btn ghost" href="https://github.com/SqueezeTheLemon/chickchicken/releases/latest/download/Chickchicken-mac-x64.zip">Chickchicken-mac-x64.zip</a></td>
+              <td>Intel</td><td>앱 압축 파일</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>설치·실행</h3>
+        <ol>
+          <li> → <b>이 Mac에 관하여</b>에서 칩이 <b>Apple M…</b>이면 arm64, <b>Intel</b>이면 x64 파일을 받아요.</li>
+          <li><code>.dmg</code>를 열고 <b>Chickchicken</b>을 <b>응용 프로그램</b> 폴더로 끌어다 놓아요.</li>
+          <li>Apple 공증(서명)을 받지 않은 앱이라 처음 실행 때 막혀요. 아래 중 하나로 열어요.
+            <ul>
+              <li>응용 프로그램 폴더에서 Chickchicken을 <b>Control+클릭(우클릭) → 열기 → 열기</b></li>
+              <li>"손상되었기 때문에 열 수 없습니다"가 뜨면 터미널에서 <code>xattr -dr com.apple.quarantine /Applications/Chickchicken.app</code> 실행 후 다시 열기</li>
+              <li>또는 <b>시스템 설정 → 개인정보 보호 및 보안</b> 아래쪽의 <b>그래도 열기</b></li>
+            </ul>
+          </li>
+          <li>삭제: 응용 프로그램 폴더에서 Chickchicken을 휴지통으로</li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="os-card">
+      <h2>처음 실행하면</h2>
+      <ol>
+        <li>앱이 기본 서버(배포한 백엔드)에서 <b>방송 목록</b>을 불러와요.</li>
+        <li>방송 카드를 누르면 <b>재생</b>돼요. 녹화방송은 바로, 라이브는 HLS로 5~10초 늦게 재생돼요.</li>
+        <li>다른 서버에 연결하려면 오른쪽 위 <b>⚙️ 서버 설정</b>에 주소를 넣고 <b>연결 테스트 → 저장</b>을 눌러요.</li>
+        <li>댓글·후원은 <b>🌐 웹에서 열기</b>로 웹 사이트에서 할 수 있어요.</li>
+      </ol>
+      <p class="meta">
+        모든 버전: <a class="accent" href="https://github.com/SqueezeTheLemon/chickchicken/releases">GitHub Releases</a> ·
+        서버 상태: <a class="accent" href="/api/health">/api/health</a>
+      </p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { mountHeader } from '/app.js';
+    mountHeader();
+
+    // 지금 쓰는 OS 를 강조 (편의 기능)
+    const ua = navigator.userAgent;
+    const os = /Windows/i.test(ua) ? 'win' : /Mac OS X|Macintosh/i.test(ua) ? 'mac' : null;
+    if (os) {
+      document.getElementById(`os-${os}`).classList.add('current');
+      document.getElementById('detected').textContent =
+        os === 'win' ? '지금 Windows를 쓰고 있어요 → 왼쪽의 x64 설치 파일을 추천해요.' : '지금 macOS를 쓰고 있어요 → 칩에 맞는 dmg를 받으세요.';
+    }
+
+    // 최신 버전 표시 (GitHub API, 실패해도 링크는 그대로 동작)
+    fetch('https://api.github.com/repos/SqueezeTheLemon/chickchicken/releases/latest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rel) => {
+        if (rel?.tag_name) {
+          document.getElementById('version-info').textContent =
+            `최신 버전: ${rel.tag_name.replace('desktop-', '')} (${new Date(rel.published_at).toLocaleDateString('ko-KR')})`;
+        }
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

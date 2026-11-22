@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <!-- 앱 화면은 로컬 파일만 실행, 데이터·영상은 설정한 서버(어떤 주소든)에서 받아요 -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http: https:; media-src http: https: blob:; img-src 'self' http: https: data:; worker-src blob:;" />
+  <title>Chickchicken</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <span class="logo">chickchicken</span>
+    <span id="server-label" class="server-label" title="연결된 서버"></span>
+    <nav>
+      <button id="refresh" class="btn ghost" title="새로고침">🔄 새로고침</button>
+      <button id="open-settings" class="btn ghost">⚙️ 서버 설정</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 목록 화면 -->
+    <section id="list-view">
+      <h1>방송 목록</h1>
+      <p id="status" class="status">불러오는 중…</p>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <!-- 재생 화면 -->
+    <section id="player-view" hidden>
+      <button id="back" class="btn ghost">← 목록으로</button>
+      <div class="player-wrap">
+        <video id="video" controls autoplay playsinline></video>
+        <div id="overlay" class="overlay" hidden></div>
+      </div>
+      <h1 id="title"></h1>
+      <p id="meta" class="meta"></p>
+      <p id="notice" class="notice"></p>
+      <p id="desc" class="desc"></p>
+      <p class="meta">
+        <a id="open-web" href="#" target="_blank">🌐 웹에서 열기 (댓글·후원)</a>
+      </p>
+    </section>
+  </main>
+
+  <!-- 서버 설정 -->
+  <dialog id="settings">
+    <form method="dialog" id="settings-form">
+      <h2>서버 설정</h2>
+      <label>서버 주소
+        <input id="server-input" type="url" required placeholder="https://chickchicken.example.com" />
+      </label>
+      <p class="meta">배포된 백엔드 주소를 입력하세요. 로컬 개발 서버는 http://localhost:3000</p>
+      <p id="settings-msg" class="meta"></p>
+      <div class="row">
+        <button type="button" id="test-server" class="btn ghost">연결 테스트</button>
+        <button type="button" id="reset-server" class="btn ghost">기본값</button>
+        <span class="spacer"></span>
+        <button value="cancel" class="btn ghost" formnovalidate>취소</button>
+        <button id="save-server" value="save" class="btn">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <footer id="footer" class="footer"></footer>
+
+  <script src="../node_modules/hls.js/dist/hls.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

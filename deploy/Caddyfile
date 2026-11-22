@@ -1,0 +1,32 @@
+# 6단계: HTTPS 리버스 프록시 (Caddy)
+# 💡 도메인만 적으면 Caddy 가 Let's Encrypt 인증서를 자동 발급·갱신해요 (80/443 포트가 열려 있고 DNS 가 이 VM 을 가리켜야 해요)
+#    DOMAIN, ACME_EMAIL 은 deploy/.env.prod 에서 와요
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# 보안 헤더
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# 영상 업로드(최대 500MB)와 라이브 송출 WebSocket 도 그대로 앱으로 전달
+	request_body {
+		max_size 520MB
+	}
+	reverse_proxy app:3000 {
+		health_uri /readyz
+		health_interval 10s
+	}
+}
+
+# www.도메인 → 도메인 으로 이동 (DNS 에 www 레코드도 만든 경우)
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

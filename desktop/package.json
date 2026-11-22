@@ -1,0 +1,90 @@
+{
+  "name": "chickchicken-desktop",
+  "productName": "Chickchicken",
+  "version": "1.0.0",
+  "description": "치지직 클론 데스크톱 클라이언트 — 방송 목록 조회와 재생 (Windows·macOS)",
+  "author": "chickchicken",
+  "license": "MIT",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist": "electron-builder --mac --win --publish never"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.17"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.chickchicken.desktop",
+    "productName": "Chickchicken",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.json",
+      "renderer/**",
+      "node_modules/hls.js/dist/hls.min.js",
+      "package.json"
+    ],
+    "artifactName": "Chickchicken-${os}-${arch}.${ext}",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.entertainment",
+      "identity": null
+    },
+    "dmg": {
+      "title": "Chickchicken"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "Chickchicken-win-${arch}-setup.${ext}",
+      "buildUniversalInstaller": false
+    },
+    "publish": null
+  }
+}

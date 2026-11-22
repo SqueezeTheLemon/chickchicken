@@ -1,0 +1,73 @@
+# 6단계: VM 한 대에 배포하는 운영 구성 (OCI Always Free VM 기준, 다른 리눅스 VM 에서도 동일)
+#   cd deploy && cp .env.prod.example .env.prod && (값 채우기) && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+#   인터넷 ──443/80──▶ caddy (HTTPS 자동 발급) ──▶ app:3000 ──▶ db:5432
+#                                                   └─ media 볼륨 (업로드 영상·라이브 HLS)
+name: chickchicken-prod
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chickchicken
+      POSTGRES_DB: chickchicken
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env.prod 에 넣어주세요}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "chickchicken"]
+      interval: 5s
+      retries: 20
+    # 외부에 포트를 열지 않아요 (app 만 내부 네트워크로 접근)
+
+  app:
+    build:
+      context: ..
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: chickchicken:prod
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://chickchicken:${POSTGRES_PASSWORD}@db:5432/chickchicken
+      DATA_DIR: /data
+      INSTANCE_ID: ${INSTANCE_ID:-oci-vm}
+      PUBLIC_BASE_URL: https://${DOMAIN:?DOMAIN 을 .env.prod 에 넣어주세요}
+      GIT_SHA: ${GIT_SHA:-dev}
+      COOKIE_SECURE: "true"          # HTTPS 뒤라서 세션 쿠키에 Secure
+      TRUST_PROXY: "1"               # Caddy 한 단계
+      CORS_PUBLIC_ORIGINS: ${CORS_PUBLIC_ORIGINS:-*}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-}
+      TOSS_CLIENT_KEY: ${TOSS_CLIENT_KEY:-}
+      TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+    volumes:
+      - media:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/readyz"]
+      interval: 10s
+      retries: 6
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL 을 .env.prod 에 넣어주세요 (인증서 만료 알림용)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # 발급받은 인증서 (재시작해도 다시 발급 안 받게)
+      - caddy_config:/config
+
+volumes:
+  dbdata:
+  media:
+  caddy_data:
+  caddy_config:

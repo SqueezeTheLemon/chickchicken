@@ -12,6 +12,13 @@ export const config = {
   dbPoolMax: Number(process.env.DB_POOL_MAX ?? 10),
   // 인스턴스 식별자 (k8s 에선 Pod 이름). 라이브 송출을 어느 인스턴스가 맡았는지 기록할 때 써요
   instanceId: process.env.INSTANCE_ID || process.env.HOSTNAME || os.hostname(),
+  // 6단계: 배포 환경 정보
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || '', // 예: https://chickchicken.example (상태 확인 응답에 표시)
+  gitSha: process.env.GIT_SHA || 'dev', // 배포한 커밋 (deploy/setup-vm.sh 가 넣어요)
+  // 리버스 프록시(Caddy) 뒤에서 실행 → X-Forwarded-* 를 믿을 프록시 단계 수
+  trustProxy: Number(process.env.TRUST_PROXY ?? 1),
+  // 데스크톱 클라이언트 등 다른 출처에서 "공개 조회(GET)"만 허용할 출처 목록 (쉼표 구분, * = 모두)
+  corsPublicOrigins: (process.env.CORS_PUBLIC_ORIGINS ?? '*').split(',').map((s) => s.trim()).filter(Boolean),
   dataDir: DATA_DIR,
   uploadDir: path.join(DATA_DIR, 'videos'),
   liveDir: path.join(DATA_DIR, 'live'),

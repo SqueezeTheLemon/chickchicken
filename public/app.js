@@ -69,6 +69,7 @@ export async function mountHeader() {
   const header = document.getElementById('site-header');
   const me = await getMe();
   const nav = el('nav', { className: 'row' });
+  nav.append(el('a', { className: 'btn ghost', href: '/download', textContent: '⬇️ 앱 다운로드' })); // 6단계
 
   if (me) {
     const logout = el('button', { className: 'btn ghost', type: 'button', textContent: '로그아웃' });

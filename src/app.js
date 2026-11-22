@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import multer from 'multer';
@@ -12,13 +13,38 @@ import { paymentGateway } from './payments/index.js';
 import { mockPayRouter } from './payments/mockRoutes.js';
 import { livesRouter } from './routes/lives.js';
 
+const VERSION = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')).version;
+const startedAt = new Date();
+
+// 💡 6단계: 데스크톱 클라이언트(다른 출처)가 쓰는 "공개 조회" 경로만 CORS 허용
+//    쿠키(로그인)는 허용하지 않아요(Allow-Credentials 없음) → 조회 전용이라 안전해요
+const CORS_PUBLIC_PATHS = [/^\/api\/broadcasts(\/\d+(\/(comments|donations))?)?$/, /^\/api\/health$/, /^\/hls\//, /^\/videos\//];
+
 export function createApp(state = { draining: false }) {
   const app = express();
   const publicDir = path.resolve('public');
+  app.set('trust proxy', config.trustProxy); // Caddy 뒤: 실제 프로토콜(https)·클라이언트 IP
 
   // 5단계: 어느 인스턴스가 응답했는지 보이게 (부하 분산 확인용)
   app.use((_req, res, next) => {
     res.setHeader('X-Instance', config.instanceId);
+    next();
+  });
+
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (!origin || !['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !CORS_PUBLIC_PATHS.some((re) => re.test(req.path))) {
+      return next();
+    }
+    const allowAll = config.corsPublicOrigins.includes('*');
+    if (allowAll || config.corsPublicOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', allowAll ? '*' : origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, X-Instance');
+      if (!allowAll) res.setHeader('Vary', 'Origin');
+    }
+    if (req.method === 'OPTIONS') return res.status(204).end();
     next();
   });
 
@@ -33,6 +59,26 @@ export function createApp(state = { draining: false }) {
     } catch {
       res.status(503).json({ ok: false, reason: 'db' });
     }
+  });
+  // 6단계: 배포 상태 확인 (사람·모니터링용) — 버전·커밋·DB·업타임. 비밀 값은 넣지 않아요
+  app.get('/api/health', async (_req, res) => {
+    let db = 'ok';
+    try {
+      await pool.query('SELECT 1');
+    } catch {
+      db = 'down';
+    }
+    res.status(db === 'ok' && !state.draining ? 200 : 503).json({
+      status: db === 'ok' && !state.draining ? 'ok' : 'degraded',
+      version: VERSION,
+      commit: config.gitSha,
+      db,
+      payment: paymentGateway.name,
+      instance: config.instanceId,
+      publicBaseUrl: config.publicBaseUrl || null,
+      startedAt: startedAt.toISOString(),
+      uptimeSeconds: Math.round(process.uptime()),
+    });
   });
   app.get('/api/instance', (_req, res) => res.json({ instance: config.instanceId }));
 

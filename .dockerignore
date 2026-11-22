@@ -9,3 +9,6 @@ scripts
 k8s
 *.log
 .DS_Store
+deploy
+desktop
+.github
